@@ -86,6 +86,22 @@ def env_step(env, action, args):
     return [next_obs, belief, task], reward, done, infos
 
 
+def select_action_cpc(args,
+                  policy,
+                  deterministic,
+                  hidden_latent,
+                  state=None,
+                  belief=None,
+                  task=None):
+    """ Select action using the policy. """
+    action = policy.act(state=state, latent=hidden_latent, belief=belief, task=task, deterministic=deterministic)
+    if isinstance(action, list) or isinstance(action, tuple):
+        value, action = action
+    else:
+        value = None
+    action = action.to(device)
+    return value, action
+
 def select_action(args,
                   policy,
                   deterministic,
@@ -125,7 +141,6 @@ def get_latent_for_policy(args, latent_sample=None, latent_mean=None, latent_log
 
     return latent
 
-
 def update_encoding(encoder, next_obs, action, reward, done, hidden_state):
     # reset hidden state of the recurrent net when we reset the task
     if done is not None:
@@ -142,6 +157,21 @@ def update_encoding(encoder, next_obs, action, reward, done, hidden_state):
 
     return latent_sample, latent_mean, latent_logvar, hidden_state
 
+def update_encoding_cpc(encoder, next_obs, action, reward, done, hidden_state):
+    # reset hidden state of the recurrent net when we reset the task
+    if done is not None:
+        hidden_state = encoder.reset_hidden(hidden_state, done)
+
+    with torch.no_grad():
+        hidden_state = encoder(actions=action.float(),
+                                                                          states=next_obs,
+                                                                          rewards=reward,
+                                                                          hidden_state=hidden_state,
+                                                                          return_prior=False)
+
+    # TODO: move the sampling out of the encoder!
+
+    return hidden_state
 
 def seed(seed, deterministic_execution=False):
     print('Seeding random, torch, numpy.')

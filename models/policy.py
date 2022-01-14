@@ -222,11 +222,12 @@ class Policy(nn.Module):
         if self.pass_state_to_policy and self.norm_state:
             self.state_rms.update(policy_storage.prev_state[:-1])
         if self.pass_latent_to_policy and self.norm_latent:
-            latent = utl.get_latent_for_policy(args,
-                                               torch.cat(policy_storage.latent_samples[:-1]),
-                                               torch.cat(policy_storage.latent_mean[:-1]),
-                                               torch.cat(policy_storage.latent_logvar[:-1])
-                                               )
+            # latent = utl.get_latent_for_policy(args,
+            #                                    torch.cat(policy_storage.latent_samples[:-1]),
+            #                                    torch.cat(policy_storage.latent_mean[:-1]),
+            #                                    torch.cat(policy_storage.latent_logvar[:-1])
+            #                                    )
+            latent = policy_storage.hidden_states[:-1]
             self.latent_rms.update(latent)
         if self.pass_belief_to_policy and self.norm_belief:
             self.belief_rms.update(policy_storage.beliefs[:-1])

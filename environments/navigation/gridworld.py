@@ -233,13 +233,11 @@ class GridNavi(gym.Env):
 
         if encoder is not None:
             # keep track of latent spaces
-            episode_latent_samples = [[] for _ in range(num_episodes)]
-            episode_latent_means = [[] for _ in range(num_episodes)]
-            episode_latent_logvars = [[] for _ in range(num_episodes)]
+            episode_hidden_states = [[] for _ in range(num_episodes)]
         else:
-            episode_latent_samples = episode_latent_means = episode_latent_logvars = None
+            episode_hidden_states = None
 
-        curr_latent_sample = curr_latent_mean = curr_latent_logvar = None
+        current_hidden_state = None
 
         # --- roll out policy ---
 
@@ -257,14 +255,9 @@ class GridNavi(gym.Env):
 
                 if episode_idx == 0:
                     # reset to prior
-                    curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder.prior(1)
-                    curr_latent_sample = curr_latent_sample[0].to(device)
-                    curr_latent_mean = curr_latent_mean[0].to(device)
-                    curr_latent_logvar = curr_latent_logvar[0].to(device)
-
-                episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-                episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-                episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                    current_hidden_state = encoder.prior(1)
+                    current_hidden_state.to(device)
+                episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
             episode_all_obs[episode_idx].append(start_obs.clone())
             if args.pass_belief_to_policy and (encoder is None):
@@ -278,32 +271,28 @@ class GridNavi(gym.Env):
                     episode_prev_obs[episode_idx].append(state.clone())
 
                 # act
-                _, action = utl.select_action(args=args,
+
+                _, action = utl.select_action_cpc(args=args,
                                                  policy=policy,
-                                                 state=state.view(-1),
                                                  belief=belief,
                                                  task=task,
                                                  deterministic=True,
-                                                 latent_sample=curr_latent_sample.view(-1) if (curr_latent_sample is not None) else None,
-                                                 latent_mean=curr_latent_mean.view(-1) if (curr_latent_mean is not None) else None,
-                                                 latent_logvar=curr_latent_logvar.view(-1) if (curr_latent_logvar is not None) else None,
+                                                 hidden_latent=current_hidden_state.view(-1)
                                                  )
+
 
                 # observe reward and next obs
                 [state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(env, action, args)
 
                 if encoder is not None:
                     # update task embedding
-                    curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder(
-                        action.float().to(device),
+                    hidden_state = encoder(action.float().to(device),
                         state,
                         rew_raw.reshape((1, 1)).float().to(device),
-                        hidden_state,
+                        current_hidden_state,
                         return_prior=False)
 
-                    episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-                    episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-                    episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                    episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
                 episode_all_obs[episode_idx].append(state.clone())
                 episode_next_obs[episode_idx].append(state.clone())
@@ -328,8 +317,7 @@ class GridNavi(gym.Env):
         # clean up
 
         if encoder is not None:
-            episode_latent_means = [torch.stack(e) for e in episode_latent_means]
-            episode_latent_logvars = [torch.stack(e) for e in episode_latent_logvars]
+            episode_hidden_states = [torch.stack(e) for e in episode_hidden_states]
 
         episode_prev_obs = [torch.cat(e) for e in episode_prev_obs]
         episode_next_obs = [torch.cat(e) for e in episode_next_obs]
@@ -339,14 +327,13 @@ class GridNavi(gym.Env):
         # plot behaviour & visualise belief in env
 
         rew_pred_means, rew_pred_vars = plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
-                                                episode_latent_means, episode_latent_logvars,
+                                                episode_hidden_states,
                                                 image_folder, iter_idx, episode_beliefs)
 
         if reward_decoder:
             plot_rew_reconstruction(env, rew_pred_means, rew_pred_vars, image_folder, iter_idx)
 
-        return episode_latent_means, episode_latent_logvars, \
-               episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
+        return episode_hidden_states,episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                episode_returns
 
 
@@ -402,7 +389,7 @@ def plot_rew_reconstruction(env,
 
 
 def plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
-            episode_latent_means, episode_latent_logvars, image_folder, iter_idx, episode_beliefs):
+          episode_hidden_states, image_folder, iter_idx, episode_beliefs):
     """
     Plot behaviour and belief.
     """
@@ -422,9 +409,9 @@ def plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
             curr_obs = episode_all_obs[episode_idx][:step_idx + 1]
             curr_goal = episode_goals[episode_idx]
 
-            if episode_latent_means is not None:
-                curr_means = episode_latent_means[episode_idx][:step_idx + 1]
-                curr_logvars = episode_latent_logvars[episode_idx][:step_idx + 1]
+            if episode_hidden_states is not None:
+                curr_hidden_states = episode_hidden_states[episode_idx][:step_idx + 1]
+
 
             # choose correct subplot
             plt.subplot(args.max_rollouts_per_task,
@@ -434,18 +421,18 @@ def plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
             # plot the behaviour
             plot_behaviour(env, curr_obs, curr_goal)
 
-            if reward_decoder is not None:
-                # visualise belief in env
-                rm, rv = compute_beliefs(env,
-                                         args,
-                                         reward_decoder,
-                                         curr_means[-1],
-                                         curr_logvars[-1],
-                                         curr_goal)
-                rew_pred_means[episode_idx].append(rm)
-                rew_pred_vars[episode_idx].append(rv)
-                plot_belief(env, rm, args)
-            elif episode_beliefs is not None:
+            # if reward_decoder is not None:
+            #     # visualise belief in env
+            #     rm, rv = compute_beliefs(env,
+            #                              args,
+            #                              reward_decoder,
+            #                              curr_means[-1],
+            #                              curr_logvars[-1],
+            #                              curr_goal)
+            #     rew_pred_means[episode_idx].append(rm)
+            #     rew_pred_vars[episode_idx].append(rv)
+            #     plot_belief(env, rm, args)
+            if episode_beliefs is not None:
                 curr_beliefs = episode_beliefs[episode_idx][step_idx]
                 plot_belief(env, curr_beliefs, args)
             else:

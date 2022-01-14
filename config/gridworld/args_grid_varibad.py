@@ -22,13 +22,13 @@ def get_args(rest_args):
 
     # using separate encoders for the different inputs ("None" uses no encoder)
     parser.add_argument('--policy_state_embedding_dim', type=int, default=16)
-    parser.add_argument('--policy_latent_embedding_dim', type=int, default=16)
+    parser.add_argument('--policy_latent_embedding_dim', type=int, default=None)
     parser.add_argument('--policy_belief_embedding_dim', type=int, default=None)
     parser.add_argument('--policy_task_embedding_dim', type=int, default=None)
 
     # normalising (inputs/rewards/outputs)
     parser.add_argument('--norm_state_for_policy', type=boolean_argument, default=True, help='normalise state input')
-    parser.add_argument('--norm_latent_for_policy', type=boolean_argument, default=True, help='normalise latent input')
+    parser.add_argument('--norm_latent_for_policy', type=boolean_argument, default=False, help='normalise latent input')
     parser.add_argument('--norm_belief_for_policy', type=boolean_argument, default=True, help='normalise belief input')
     parser.add_argument('--norm_task_for_policy', type=boolean_argument, default=True, help='normalise task input')
     parser.add_argument('--norm_rew_for_policy', type=boolean_argument, default=True, help='normalise rew for RL train')
@@ -75,7 +75,7 @@ def get_args(rest_args):
     # --- VAE TRAINING ---
 
     # general
-    parser.add_argument('--lr_vae', type=float, default=0.001)
+    parser.add_argument('--lr_vae', type=float, default=2e-4)
     parser.add_argument('--size_vae_buffer', type=int, default=100000,
                         help='how many trajectories (!) to keep in VAE buffer')
     parser.add_argument('--precollect_len', type=int, default=5000,
@@ -174,11 +174,11 @@ def get_args(rest_args):
     # --- OTHERS ---
 
     # logging, saving, evaluation
-    parser.add_argument('--log_interval', type=int, default=500, help='log interval, one log per n updates')
+    parser.add_argument('--log_interval', type=int, default=50, help='log interval, one log per n updates')
     parser.add_argument('--save_interval', type=int, default=1000, help='save interval, one save per n updates')
     parser.add_argument('--save_intermediate_models', type=boolean_argument, default=False, help='save all models')
-    parser.add_argument('--eval_interval', type=int, default=500, help='eval interval, one eval per n updates')
-    parser.add_argument('--vis_interval', type=int, default=500, help='visualisation interval, one eval per n updates')
+    parser.add_argument('--eval_interval', type=int, default=50, help='eval interval, one eval per n updates')
+    parser.add_argument('--vis_interval', type=int, default=1500, help='visualisation interval, one eval per n updates')
     parser.add_argument('--results_log_dir', default=None, help='directory to save results (None uses ./logs)')
 
     # general settings

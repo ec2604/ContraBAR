@@ -58,7 +58,7 @@ class PPO:
                policy_storage,
                encoder=None,  # variBAD encoder
                rlloss_through_encoder=False,  # whether or not to backprop RL loss through encoder
-               compute_vae_loss=None  # function that can compute the VAE loss
+               compute_cpc_loss=None  # function that can compute the VAE loss
                ):
 
         # -- get action values --
@@ -90,24 +90,24 @@ class PPO:
             for sample in data_generator:
 
                 state_batch, belief_batch, task_batch, \
-                actions_batch, latent_sample_batch, latent_mean_batch, latent_logvar_batch, value_preds_batch, \
+                actions_batch, hidden_batch, value_preds_batch, \
                 return_batch, old_action_log_probs_batch, adv_targ = sample
 
                 if not rlloss_through_encoder:
                     state_batch = state_batch.detach()
-                    if latent_sample_batch is not None:
-                        latent_sample_batch = latent_sample_batch.detach()
-                        latent_mean_batch = latent_mean_batch.detach()
-                        latent_logvar_batch = latent_logvar_batch.detach()
-
-                latent_batch = utl.get_latent_for_policy(args=self.args, latent_sample=latent_sample_batch,
-                                                         latent_mean=latent_mean_batch,
-                                                         latent_logvar=latent_logvar_batch
-                                                         )
+                    # if latent_sample_batch is not None:
+                    #     latent_sample_batch = latent_sample_batch.detach()
+                    #     latent_mean_batch = latent_mean_batch.detach()
+                    #     latent_logvar_batch = latent_logvar_batch.detach()
+                    hidden_batch.detach()
+                # latent_batch = utl.get_latent_for_policy(args=self.args, latent_sample=latent_sample_batch,
+                #                                          latent_mean=latent_mean_batch,
+                #                                          latent_logvar=latent_logvar_batch
+                #                                          )
 
                 # Reshape to do in a single forward pass for all steps
                 values, action_log_probs, dist_entropy = \
-                    self.actor_critic.evaluate_actions(state=state_batch, latent=latent_batch,
+                    self.actor_critic.evaluate_actions(state=state_batch, latent=hidden_batch,
                                                        belief=belief_batch, task=task_batch,
                                                        action=actions_batch)
 
@@ -144,7 +144,7 @@ class PPO:
 
                 # compute vae loss and backprop
                 if rlloss_through_encoder:
-                    loss += self.args.vae_loss_coeff * compute_vae_loss()
+                    loss += self.args.vae_loss_coeff * compute_cpc_loss()
 
                 # compute gradients (will attach to all networks involved in this computation)
                 loss.backward()
@@ -173,7 +173,7 @@ class PPO:
 
         if (not rlloss_through_encoder) and (self.optimiser_vae is not None):
             for _ in range(self.args.num_vae_updates):
-                compute_vae_loss(update=True)
+                compute_cpc_loss(update=True)
 
         if self.lr_scheduler_policy is not None:
             self.lr_scheduler_policy.step()

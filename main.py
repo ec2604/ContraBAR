@@ -24,7 +24,7 @@ from config.mujoco import \
     args_humanoid_dir_varibad, args_humanoid_dir_rl2, args_humanoid_dir_multitask, args_humanoid_dir_expert
 from environments.parallel_envs import make_vec_envs
 from learner import Learner
-from metalearner import MetaLearner
+from metalearner_cpc import MetaLearner
 
 
 def main():

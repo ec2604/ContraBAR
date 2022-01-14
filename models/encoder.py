@@ -182,3 +182,137 @@ class RNNEncoder(nn.Module):
             latent_sample, latent_mean, latent_logvar = latent_sample[0], latent_mean[0], latent_logvar[0]
 
         return latent_sample, latent_mean, latent_logvar, output
+
+class RNNCPCEncoder(nn.Module):
+    def __init__(self,
+                 args,
+                 # network size
+                 layers_before_gru=(),
+                 hidden_size=64,
+                 layers_after_gru=(),
+                 latent_dim=32,
+                 # actions, states, rewards
+                 action_dim=2,
+                 action_embed_dim=10,
+                 state_dim=2,
+                 state_embed_dim=10,
+                 reward_size=1,
+                 reward_embed_size=5,
+                 ):
+        super(RNNCPCEncoder, self).__init__()
+
+        self.args = args
+        self.latent_dim = latent_dim
+        self.hidden_size = hidden_size
+
+        # embed action, state, reward
+        self.state_encoder = utl.FeatureExtractor(state_dim, state_embed_dim, F.relu)
+        self.action_encoder = utl.FeatureExtractor(action_dim, action_embed_dim, F.relu)
+        self.reward_encoder = utl.FeatureExtractor(reward_size, reward_embed_size, F.relu)
+
+        # fully connected layers before the recurrent cell
+        curr_input_dim = action_embed_dim + state_embed_dim + reward_embed_size
+        self.fc_before_gru = nn.ModuleList([])
+        for i in range(len(layers_before_gru)):
+            self.fc_before_gru.append(nn.Linear(curr_input_dim, layers_before_gru[i]))
+            curr_input_dim = layers_before_gru[i]
+
+        # recurrent unit
+        # TODO: TEST RNN vs GRU vs LSTM
+        self.gru = nn.GRU(input_size=curr_input_dim,
+                          hidden_size=hidden_size,
+                          num_layers=1,
+                          )
+
+        for name, param in self.gru.named_parameters():
+            if 'bias' in name:
+                nn.init.constant_(param, 0)
+            elif 'weight' in name:
+                nn.init.orthogonal_(param)
+
+        # # fully connected layers after the recurrent cell
+        # curr_input_dim = hidden_size
+        # self.fc_after_gru = nn.ModuleList([])
+        # for i in range(len(layers_after_gru)):
+        #     self.fc_after_gru.append(nn.Linear(curr_input_dim, layers_after_gru[i]))
+        #     curr_input_dim = layers_after_gru[i]
+        #
+        # # output layer
+        # self.fc_mu = nn.Linear(curr_input_dim, latent_dim)
+        # self.fc_logvar = nn.Linear(curr_input_dim, latent_dim)
+
+    def reset_hidden(self, hidden_state, done):
+        """ Reset the hidden state where the BAMDP was done (i.e., we get a new task) """
+        if hidden_state.dim() != done.dim():
+            if done.dim() == 2:
+                done = done.unsqueeze(0)
+            elif done.dim() == 1:
+                done = done.unsqueeze(0).unsqueeze(2)
+        hidden_state = hidden_state * (1 - done)
+        return hidden_state
+
+    def prior(self, batch_size, sample=True):
+
+        # TODO: add option to incorporate the initial state
+
+        # we start out with a hidden state of zero
+        hidden_state = torch.zeros((1, batch_size, self.hidden_size), requires_grad=True).to(device)
+
+        return hidden_state
+
+    def embed_input(self, actions, states, rewards, with_actions=True):
+        # we do the action-normalisation (the the env bounds) here
+        actions = utl.squash_action(actions, self.args)
+
+        # shape should be: sequence_len x batch_size x hidden_size
+        actions = actions.reshape((-1, *actions.shape[-2:]))
+        states = states.reshape((-1, *states.shape[-2:]))
+        rewards = rewards.reshape((-1, *rewards.shape[-2:]))
+
+        # extract features for states, actions, rewards
+        ha = self.action_encoder(actions)
+        hs = self.state_encoder(states)
+        hr = self.reward_encoder(rewards)
+        h = torch.cat((hs, hr), dim=2)
+        if with_actions:
+            h = torch.cat((ha, h), dim=2)
+        return h
+
+    def forward(self, actions, states, rewards, hidden_state, return_prior, sample=True, detach_every=None):
+        """
+        Actions, states, rewards should be given in form [sequence_len * batch_size * dim].
+        For one-step predictions, sequence_len=1 and hidden_state!=None.
+        For feeding in entire trajectories, sequence_len>1 and hidden_state=None.
+        In the latter case, we return embeddings of length sequence_len+1 since they include the prior.
+        """
+        h = self.embed_input(actions, states, rewards)
+        if hidden_state is not None:
+            # if the sequence_len is one, this will add a dimension at dim 0 (otherwise will be the same)
+            hidden_state = hidden_state.reshape((-1, *hidden_state.shape[-2:]))
+
+        if return_prior:
+            # if hidden state is none, start with the prior
+            prior_hidden_state = self.prior(actions.shape[1])
+            hidden_state = prior_hidden_state.clone()
+
+
+
+        # forward through fully connected layers before GRU
+        for i in range(len(self.fc_before_gru)):
+            h = F.relu(self.fc_before_gru[i](h))
+
+        if detach_every is None:
+            # GRU cell (output is outputs for each time step, hidden_state is last output)
+            output, hidden = self.gru(h, hidden_state)
+        else:
+            hidden = []
+            for i in range(int(np.ceil(h.shape[0] / detach_every))):
+                curr_input = h[i*detach_every:i*detach_every+detach_every]  # pytorch caps if we overflow, nice
+                curr_output, hidden_state = self.gru(curr_input, hidden_state)
+                # detach hidden state; useful for BPTT when sequences are very long
+                hidden_state = hidden_state.detach()
+                hidden.append(hidden_state)
+            output = torch.cat(hidden, dim=0)
+        output = output.clone()
+
+        return output

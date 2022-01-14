@@ -55,23 +55,21 @@ def evaluate(args,
 
     if encoder is not None:
         # reset latent state to prior
-        latent_sample, latent_mean, latent_logvar, hidden_state = encoder.prior(num_processes)
+        hidden_state = encoder.prior(num_processes)
     else:
-        latent_sample = latent_mean = latent_logvar = hidden_state = None
+        hidden_state = None
 
     for episode_idx in range(num_episodes):
 
         for step_idx in range(num_steps):
 
             with torch.no_grad():
-                _, action = utl.select_action(args=args,
+                _, action = utl.select_action_cpc(args=args,
                                               policy=policy,
+                                              hidden_latent=hidden_state.squeeze(0),
                                               state=state,
                                               belief=belief,
                                               task=task,
-                                              latent_sample=latent_sample,
-                                              latent_mean=latent_mean,
-                                              latent_logvar=latent_logvar,
                                               deterministic=True)
 
             # observe reward and next obs
@@ -80,7 +78,7 @@ def evaluate(args,
 
             if encoder is not None:
                 # update the hidden state
-                latent_sample, latent_mean, latent_logvar, hidden_state = utl.update_encoding(encoder=encoder,
+                hidden_state = utl.update_encoding_cpc(encoder=encoder,
                                                                                               next_obs=state,
                                                                                               action=action,
                                                                                               reward=rew_raw,
@@ -108,14 +106,7 @@ def visualise_behaviour(args,
                         iter_idx,
                         ret_rms,
                         tasks,
-                        encoder=None,
-                        reward_decoder=None,
-                        state_decoder=None,
-                        task_decoder=None,
-                        compute_rew_reconstruction_loss=None,
-                        compute_task_reconstruction_loss=None,
-                        compute_state_reconstruction_loss=None,
-                        compute_kl_loss=None,
+                        encoder=None
                         ):
     # initialise environment
     env = make_vec_envs(env_name=args.env_name,
@@ -142,41 +133,31 @@ def visualise_behaviour(args,
                                                  policy=policy,
                                                  iter_idx=iter_idx,
                                                  encoder=encoder,
-                                                 reward_decoder=reward_decoder,
-                                                 state_decoder=state_decoder,
-                                                 task_decoder=task_decoder,
-                                                 image_folder=image_folder,
+                                                 image_folder=image_folder
                                                  )
     else:
         traj = get_test_rollout(args, env, policy, encoder)
 
-    latent_means, latent_logvars, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, episode_returns = traj
+    hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, episode_returns = traj
 
-    if latent_means is not None:
-        plot_latents(latent_means, latent_logvars,
-                     image_folder=image_folder,
-                     iter_idx=iter_idx
-                     )
+    if hidden_states is not None:
+        # plot_latents(latent_means, latent_logvars,
+        #              image_folder=image_folder,
+        #              iter_idx=iter_idx
+        #              )
 
         if not (args.disable_decoder and args.disable_kl_term):
-            plot_vae_loss(args,
-                          latent_means,
-                          latent_logvars,
-                          episode_prev_obs,
-                          episode_next_obs,
-                          episode_actions,
-                          episode_rewards,
-                          episode_task,
-                          image_folder=image_folder,
-                          iter_idx=iter_idx,
-                          reward_decoder=reward_decoder,
-                          state_decoder=state_decoder,
-                          task_decoder=task_decoder,
-                          compute_task_reconstruction_loss=compute_task_reconstruction_loss,
-                          compute_rew_reconstruction_loss=compute_rew_reconstruction_loss,
-                          compute_state_reconstruction_loss=compute_state_reconstruction_loss,
-                          compute_kl_loss=compute_kl_loss,
-                          )
+            pass
+            # plot_vae_loss(args,
+            #               hidden_states,
+            #               episode_prev_obs,
+            #               episode_next_obs,
+            #               episode_actions,
+            #               episode_rewards,
+            #               episode_task,
+            #               image_folder=image_folder,
+            #               iter_idx=iter_idx
+            #               )
 
     env.close()
 
@@ -328,32 +309,19 @@ def plot_latents(latent_means,
 
 
 def plot_vae_loss(args,
-                  latent_means,
-                  latent_logvars,
+                  hidden_states,
                   prev_obs,
                   next_obs,
                   actions,
                   rewards,
                   task,
                   image_folder,
-                  iter_idx,
-                  reward_decoder,
-                  state_decoder,
-                  task_decoder,
-                  compute_task_reconstruction_loss,
-                  compute_rew_reconstruction_loss,
-                  compute_state_reconstruction_loss,
-                  compute_kl_loss
+                  iter_idx
                   ):
-    num_rollouts = len(latent_means)
-    num_episode_steps = len(latent_means[0])
-    if not args.disable_stochasticity_in_latent:
-        num_samples = 10  # how many samples to use to get an average/std ELBO loss
-    else:
-        num_samples = 1
+    num_rollouts = len(hidden_states)
+    num_episode_steps = len(hidden_states[0])
 
-    latent_means = torch.cat(latent_means)
-    latent_logvars = torch.cat(latent_logvars)
+    latent_beliefs = torch.cat(hidden_states)
 
     prev_obs = torch.cat(prev_obs).to(device)
     next_obs = torch.cat(next_obs).to(device)
@@ -361,10 +329,10 @@ def plot_vae_loss(args,
     rewards = torch.cat(rewards).to(device)
 
     # - we will try to make predictions for each tuple in trajectory, hence we need to expand the targets
-    prev_obs = prev_obs.unsqueeze(0).expand(num_samples, *prev_obs.shape).to(device)
-    next_obs = next_obs.unsqueeze(0).expand(num_samples, *next_obs.shape).to(device)
-    actions = actions.unsqueeze(0).expand(num_samples, *actions.shape).to(device)
-    rewards = rewards.unsqueeze(0).expand(num_samples, *rewards.shape).to(device)
+    prev_obs = prev_obs.unsqueeze(0).expand(1, *prev_obs.shape).to(device)
+    next_obs = next_obs.unsqueeze(0).expand(1, *next_obs.shape).to(device)
+    actions = actions.unsqueeze(0).expand(1, *actions.shape).to(device)
+    rewards = rewards.unsqueeze(0).expand(1, *rewards.shape).to(device)
 
     rew_reconstr_mean = []
     rew_reconstr_std = []
@@ -379,7 +347,7 @@ def plot_vae_loss(args,
     task_pred_std = []
 
     # compute the sum of ELBO_t's by looping through (trajectory length + prior)
-    for i in range(len(latent_means)):
+    for i in range(len(hidden_states)):
 
         curr_latent_mean = latent_means[i]
         curr_latent_logvar = latent_logvars[i]
