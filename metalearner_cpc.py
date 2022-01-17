@@ -78,8 +78,8 @@ class MetaLearner:
         else:
             self.args.action_dim = self.envs.action_space.shape[0]
 
-        # initialise VAE and policy
-        self.cpc_encoder = VaribadCPC(self.args, self.logger, lambda: self.iter_idx, lookahead_factor=15)
+        # initialise CPC and policy
+        self.cpc_encoder = VaribadCPC(self.args, self.logger, lambda: self.iter_idx, lookahead_factor=1)
         self.policy_storage = self.initialise_policy_storage()
         self.policy = self.initialise_policy()
 
@@ -261,9 +261,9 @@ class MetaLearner:
 
                 # check if we are pre-training the VAE
                 if self.args.pretrain_len > self.iter_idx:
-                    for p in range(self.args.num_vae_updates_per_pretrain):
+                    for p in range(20):#range(self.args.num_vae_updates_per_pretrain):
                         self.cpc_encoder.compute_cpc_loss(update=True,
-                                                  pretrain_index=self.iter_idx * self.args.num_vae_updates_per_pretrain + p)
+                                                  pretrain_index=self.iter_idx * 20 + p)#self.args.num_vae_updates_per_pretrain + p)
                 # otherwise do the normal update (policy + vae)
                 else:
 

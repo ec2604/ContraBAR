@@ -19,8 +19,8 @@ class MLP(nn.Module):
         self.hidden3 = nn.Linear(latent_dim // 2, 1)
 
     def forward(self, x):
-        out = self.relu1(self.hidden1(x))
-        out = self.relu2(self.hidden2(out))
+        #out = self.relu1(self.hidden1(x))
+        out = self.relu2(self.hidden2(x))
         out = self.hidden3(out)
         return out
 

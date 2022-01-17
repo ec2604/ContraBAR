@@ -276,6 +276,9 @@ class RNNCPCEncoder(nn.Module):
         h = torch.cat((hs, hr), dim=2)
         if with_actions:
             h = torch.cat((ha, h), dim=2)
+        # forward through fully connected layers before GRU
+        for i in range(len(self.fc_before_gru)):
+            h = F.relu(self.fc_before_gru[i](h))
         return h
 
     def forward(self, actions, states, rewards, hidden_state, return_prior, sample=True, detach_every=None):
@@ -297,9 +300,7 @@ class RNNCPCEncoder(nn.Module):
 
 
 
-        # forward through fully connected layers before GRU
-        for i in range(len(self.fc_before_gru)):
-            h = F.relu(self.fc_before_gru[i](h))
+
 
         if detach_every is None:
             # GRU cell (output is outputs for each time step, hidden_state is last output)

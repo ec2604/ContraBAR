@@ -55,3 +55,6 @@ class TBLogger:
 
     def add(self, name, value, x_pos):
         self.writer.add_scalar(name, value, x_pos)
+
+    def add_hist(self, name, value, x_pos):
+        self.writer.add_histogram(name, value, x_pos)
