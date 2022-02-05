@@ -120,11 +120,9 @@ class PointEnv(Env):
         episode_lengths = []
 
         if encoder is not None:
-            episode_latent_samples = [[] for _ in range(num_episodes)]
-            episode_latent_means = [[] for _ in range(num_episodes)]
-            episode_latent_logvars = [[] for _ in range(num_episodes)]
+            episode_hidden_states = [[] for _ in range(num_episodes)]
         else:
-            episode_latent_samples = episode_latent_means = episode_latent_logvars = None
+            episode_hidden_states = None
 
         # --- roll out policy ---
 
@@ -152,17 +150,9 @@ class PointEnv(Env):
             if episode_idx == 0:
                 if encoder is not None:
                     # reset to prior
-                    curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder.prior(1)
-                    curr_latent_sample = curr_latent_sample[0].to(device)
-                    curr_latent_mean = curr_latent_mean[0].to(device)
-                    curr_latent_logvar = curr_latent_logvar[0].to(device)
-                else:
-                    curr_latent_sample = curr_latent_mean = curr_latent_logvar = None
-
-            if encoder is not None:
-                episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-                episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-                episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                    current_hidden_state = encoder.prior(1)
+                    current_hidden_state.to(device)
+            episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
             for step_idx in range(1, env._max_episode_steps + 1):
 
@@ -170,13 +160,15 @@ class PointEnv(Env):
                     episode_prev_obs[episode_idx].append(start_obs_raw.clone())
                 else:
                     episode_prev_obs[episode_idx].append(state.clone())
-                # act
-                latent = utl.get_latent_for_policy(args,
-                                                   latent_sample=curr_latent_sample,
-                                                   latent_mean=curr_latent_mean,
-                                                   latent_logvar=curr_latent_logvar)
-                _, action = policy.act(state=state.view(-1), latent=latent, belief=belief, task=task,
-                                       deterministic=True)
+                    # act
+                _, action = utl.select_action_cpc(args=args,
+                                                  policy=policy,
+                                                  belief=belief,
+                                                  task=task,
+                                                  deterministic=True,
+                                                  state=state,
+                                                  hidden_latent=current_hidden_state.squeeze(0)
+                                                  )
 
                 (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.float().reshape((1, -1)).to(device)
@@ -187,13 +179,11 @@ class PointEnv(Env):
 
                 if encoder is not None:
                     # update task embedding
-                    curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder(
+                    current_hidden_state = encoder(
                         action.reshape(1, -1).float().to(device), state, rew.reshape(1, -1).float().to(device),
-                        hidden_state, return_prior=False)
+                        current_hidden_state, return_prior=False)
 
-                    episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-                    episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-                    episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                    episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
                 episode_next_obs[episode_idx].append(state.clone())
                 episode_rewards[episode_idx].append(rew.clone())
@@ -210,9 +200,7 @@ class PointEnv(Env):
 
         # clean up
         if encoder is not None:
-            episode_latent_means = [torch.stack(e) for e in episode_latent_means]
-            episode_latent_logvars = [torch.stack(e) for e in episode_latent_logvars]
-
+            episode_hidden_states = [torch.stack(e) for e in episode_hidden_states]
         episode_prev_obs = [torch.cat(e) for e in episode_prev_obs]
         episode_next_obs = [torch.cat(e) for e in episode_next_obs]
         episode_actions = [torch.stack(e) for e in episode_actions]
@@ -227,7 +215,7 @@ class PointEnv(Env):
             ylim = (-1.3, 1.3)
         color_map = mpl.colors.ListedColormap(sns.color_palette("husl", num_episodes))
 
-        observations = torch.stack([episode_prev_obs[i]for i in range(num_episodes)]).cpu().numpy()
+        observations = torch.stack([episode_prev_obs[i] for i in range(num_episodes)]).cpu().numpy()
         curr_task = env.get_task()
 
         # plot goal
@@ -246,7 +234,7 @@ class PointEnv(Env):
             if self.goal_sampler == semi_circle_goal_sampler:
                 angle = np.linspace(0, np.pi, 100)
             else:
-                angle = np.linspace(0, 2*np.pi, 100)
+                angle = np.linspace(0, 2 * np.pi, 100)
             goal_range = r * np.array((np.cos(angle), np.sin(angle)))
             plt.plot(goal_range[0], goal_range[1], 'k--', alpha=0.1)
 
@@ -278,11 +266,10 @@ class PointEnv(Env):
             plt.show()
 
         if not return_pos:
-            return episode_latent_means, episode_latent_logvars, \
-                   episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
+            return episode_hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                    episode_returns
         else:
-            return episode_latent_means, episode_latent_logvars, \
+            return episode_hidden_states, \
                    episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                    episode_returns, pos
 

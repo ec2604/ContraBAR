@@ -22,19 +22,19 @@ class VaribadCPC:
     - can update the CPC module
     """
 
-    def __init__(self, args, logger, get_iter_idx, lookahead_factor):
+    def __init__(self, args, logger, get_iter_idx):
 
         self.args = args
         self.logger = logger
         self.get_iter_idx = get_iter_idx
-        self.task_dim = get_task_dim(self.args) if self.args.decode_task else None
+        self.task_dim = get_task_dim(self.args)# if self.args.decode_task else None
         self.num_tasks = get_num_tasks(self.args) if self.args.decode_task else None
 
         # initialise the encoder
         self.encoder = self.initialise_encoder()
         self.action_gru = actionGRU(input_dim=self.args.action_dim, hidden_dim=self.args.latent_dim).to(device)
-        self.lookahead_factor = lookahead_factor
-        cpc_clf = [MLP(self.args.reward_embedding_size + self.args.state_embedding_size + self.args.latent_dim) for i in range(self.lookahead_factor)]
+        self.lookahead_factor = self.args.lookahead_factor if self.args.lookahead_factor else 1
+        cpc_clf = [MLP(self.args.reward_embedding_size + self.args.state_embedding_size + + self.args.action_embedding_size + self.args.latent_dim) for i in range(self.lookahead_factor)]
         self.mlp = nn.ModuleList(cpc_clf).to(device)
         self.cpc_loss_func = nn.BCEWithLogitsLoss()
         # initialise rollout storage for the VAE update
@@ -225,13 +225,27 @@ class VaribadCPC:
 
         return rew_reconstruction_loss, state_reconstruction_loss, task_reconstruction_loss, kl_loss
 
-    def sample_negatives(self, z_batch, negative_sampling_factor, trajectory_len):
+    def sample_negatives(self, z_batch, negative_sampling_factor, trajectory_len, tasks):
         z_batch = z_batch.permute([1,0, 2])
         cdist = torch.cdist(z_batch.reshape(-1, z_batch.shape[-1]), z_batch.reshape(-1, z_batch.shape[-1]))
-        for i in range(25):
-            cdist[i*60:(i+1)*60,i*60:(i+1)*60] = -1
+        task_dist = torch.cdist(tasks, tasks)
+        x, y = torch.where(task_dist == 0)
+        x = ((x*(z_batch.shape[1])).reshape(-1,1) + torch.arange(z_batch.shape[1]).reshape(1,-1).to(device)).reshape(-1,1).repeat(1,z_batch.shape[1]).reshape(-1,1)
+        y = ((y * z_batch.shape[1]).reshape(-1, 1) + torch.arange(z_batch.shape[1]).to(device)).unsqueeze(1).expand(y.shape[0],z_batch.shape[1],z_batch.shape[1]).reshape(-1,1)
+        idx = x*(cdist.shape[0]) + y
+        orig_shape = cdist.shape
+        cdist = cdist.reshape(-1,)
+        cdist[idx] = -1
+        cdist = cdist.reshape(orig_shape)
+        # for i in range(z_batch.shape[0]):
+        # #    cdist[i*z_batch.shape[1]:(i+1)*z_batch.shape[1],i*z_batch.shape[1]:(i+1)*z_batch.shape[1]] = -1
+        # for i in range(z_batch.shape[0]):
+        #     for j in torch.where(task_dist[i,:] == 0.)[0]:
+        #         cdist[i*z_batch.shape[1]:(i+1)*z_batch.shape[1],j*z_batch.shape[1]:(j+1)*z_batch.shape[1]] = -1
         numerator = (cdist > -1)#(cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1))
         denom = (cdist > -1).sum(dim=-1).view(cdist.shape[0],1)#(cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1)).sum(dim=-1).view(cdist.shape[0], 1)
+        if torch.any(denom == 0):
+            return False
         obs_neg = z_batch.reshape(-1, z_batch.shape[-1])[
             torch.multinomial(numerator / denom, negative_sampling_factor)]
         return obs_neg.reshape(z_batch.shape[0], z_batch.shape[1], negative_sampling_factor, z_batch.shape[-1]).permute([1, 0, 2, 3]), cdist
@@ -248,17 +262,20 @@ class VaribadCPC:
         # vae_prev_obs will be of size: max trajectory len x num trajectories x dimension of observations
 
         # pass through encoder (outputs will be: (max_traj_len+1) x number of rollouts x latent_dim -- includes the prior!)
-        z_batch = self.encoder.embed_input(actions=vae_actions, states=vae_prev_obs, rewards=vae_rewards, with_actions=False)
+        z_batch = self.encoder.embed_input(actions=vae_actions, states=vae_prev_obs, rewards=vae_rewards)
         seen_reward = ((vae_rewards > 0).cumsum(dim=0) > 0).long().permute([1,2,0])[...,:-1]
         hidden_states = self.encoder(actions=vae_actions,
-                                                        states=vae_next_obs,
+                                                        states=vae_prev_obs,
                                                         rewards=vae_rewards,
                                                         hidden_state=None,
                                                         return_prior=True,
                                                         detach_every=self.args.tbptt_stepsize if hasattr(self.args, 'tbptt_stepsize') else None,
                                                         )
-        z_negatives, z_dist = self.sample_negatives(z_batch, 1, trajectory_lens)
-        indices = torch.arange(0, self.lookahead_factor,device=device) + torch.arange(trajectory_lens.max() - self.lookahead_factor,device=device).view(-1, 1)
+        negatives = self.sample_negatives(z_batch, 1, trajectory_lens, vae_tasks)
+        if negatives == False:
+            return None
+        z_negatives, z_dist = negatives
+        #indices = torch.arange(0, self.lookahead_factor,device=device) + torch.arange(trajectory_lens.max() - self.lookahead_factor,device=device).view(-1, 1)
 
 
         cpc_loss = None
@@ -275,10 +292,10 @@ class VaribadCPC:
         z_a_gru_neg = [torch.cat([z_negatives[i:, ...],
                                   torch.unsqueeze(hidden_states[:-i,...], 2).expand(-1, -1, 1, -1)], dim=-1).permute(
             [1, 0, 2, 3]) for i in range(1, self.lookahead_factor + 1)]
-        pred_positive = torch.stack(
+        pred_positive = torch.cat(
             [self.mlp[i](z_a_gru_pos[i].reshape(-1, z_a_gru_pos[i].shape[-1])).reshape(*z_a_gru_pos[i].shape[:2]) for i in
              range(self.lookahead_factor)], 1)
-        pred_negative = torch.stack([self.mlp[i](z_a_gru_neg[i].reshape(-1, z_a_gru_neg[i].shape[-1])).reshape(z_a_gru_neg[i].shape[:2],
+        pred_negative = torch.cat([self.mlp[i](z_a_gru_neg[i].reshape(-1, z_a_gru_neg[i].shape[-1])).reshape(z_a_gru_neg[i].shape[:2],
                                                                                              1,
                                                                                              -1) for i in
                                      range(self.lookahead_factor)], 1)
@@ -288,9 +305,9 @@ class VaribadCPC:
         neg_target = torch.zeros_like(pred_negative, device=device)
         loss_pos = self.cpc_loss_func(pred_positive, pos_target)
         loss_neg = self.cpc_loss_func(pred_negative, neg_target)
-        loss_pos_seen = (nn.BCEWithLogitsLoss(reduction='none')(pred_positive, pos_target) * seen_reward.reshape(-1, 1)).sum() / seen_reward.sum()
-        loss_neg_seen = (nn.BCEWithLogitsLoss(reduction='none')(pred_negative, neg_target) * seen_reward.reshape(-1,
-                                                                                                                 1)).sum() / seen_reward.sum()
+        # loss_pos_seen = (nn.BCEWithLogitsLoss(reduction='none')(pred_positive, pos_target) * seen_reward.reshape(-1, 1)).sum() / seen_reward.sum()
+        # loss_neg_seen = (nn.BCEWithLogitsLoss(reduction='none')(pred_negative, neg_target) * seen_reward.reshape(-1,
+        #                                                                                                          1)).sum() / seen_reward.sum()
         fraction_examples_reward_seen = seen_reward.sum() / pred_positive.shape[0]
         cpc_loss = (loss_pos + loss_neg) / 2
         if update:
@@ -301,7 +318,9 @@ class VaribadCPC:
                 nn.utils.clip_grad_norm_(self.encoder.parameters(), self.args.encoder_max_grad_norm)
             # update
             self.cpc_optimizer.step()
-        self.log(loss_pos, loss_neg, z_dist, loss_pos_seen, loss_neg_seen, fraction_examples_reward_seen, pretrain_index=pretrain_index)
+        #self.log(loss_pos, loss_neg, z_dist, loss_pos_seen, loss_neg_seen, fraction_examples_reward_seen, pretrain_index=pretrain_index)
+        self.log(loss_pos, loss_neg, z_dist, loss_pos, loss_neg, fraction_examples_reward_seen,
+                 pretrain_index=pretrain_index)
 
         return cpc_loss
 

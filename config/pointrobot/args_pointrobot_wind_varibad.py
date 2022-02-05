@@ -7,10 +7,11 @@ def get_args(rest_args):
 
     # --- GENERAL ---
 
-    parser.add_argument('--num_frames', type=int, default=1e8, help='number of frames to train')
-    parser.add_argument('--max_rollouts_per_task', type=int, default=2, help='number of MDP episodes for adaptation')
+    # training parameters
+    parser.add_argument('--num_frames', type=int, default=5e7, help='number of frames to train')
+    parser.add_argument('--max_rollouts_per_task', type=int, default=3)
     parser.add_argument('--exp_label', default='varibad', help='label (typically name of method)')
-    parser.add_argument('--env_name', default='HalfCheetahVel-v0', help='environment to train on')
+    parser.add_argument('--env_name', default='SparsePointEnvWind-v0', help='environment to train on')
 
     # --- POLICY ---
 
@@ -36,7 +37,7 @@ def get_args(rest_args):
     parser.add_argument('--norm_actions_post_sampling', type=boolean_argument, default=False, help='normalise policy output')
 
     # network
-    parser.add_argument('--policy_layers', nargs='+', default=[128, 128])
+    parser.add_argument('--policy_layers', nargs='+', default=[128, 128, 128])
     parser.add_argument('--policy_activation_function', type=str, default='tanh', help='tanh/relu/leaky-relu')
     parser.add_argument('--policy_initialisation', type=str, default='normc', help='normc/orthogonal')
     parser.add_argument('--policy_anneal_lr', type=boolean_argument, default=False, help='anneal LR over time')
@@ -56,21 +57,21 @@ def get_args(rest_args):
     parser.add_argument('--lr_policy', type=float, default=7e-4, help='learning rate (default: 7e-4)')
     parser.add_argument('--num_processes', type=int, default=16,
                         help='how many training CPU processes / parallel environments to use (default: 16)')
-    parser.add_argument('--policy_num_steps', type=int, default=400,
+    parser.add_argument('--policy_num_steps', type=int, default=200,
                         help='number of env steps to do (per process) before updating')
     parser.add_argument('--policy_eps', type=float, default=1e-8, help='optimizer epsilon (1e-8 for ppo, 1e-5 for a2c)')
     parser.add_argument('--policy_init_std', type=float, default=1.0, help='only used for continuous actions')
     parser.add_argument('--policy_value_loss_coef', type=float, default=0.5, help='value loss coefficient')
-    parser.add_argument('--policy_entropy_coef', type=float, default=0.01, help='entropy term coefficient')
-    parser.add_argument('--policy_gamma', type=float, default=0.97, help='discount factor for rewards')
+    parser.add_argument('--policy_entropy_coef', type=float, default=0.001, help='entropy term coefficient')
+    parser.add_argument('--policy_gamma', type=float, default=0.99, help='discount factor for rewards')
     parser.add_argument('--policy_use_gae', type=boolean_argument, default=True,
                         help='use generalized advantage estimation')
     parser.add_argument('--policy_tau', type=float, default=0.9, help='gae parameter')
     parser.add_argument('--use_proper_time_limits', type=boolean_argument, default=True,
                         help='treat timeout and death differently (important in mujoco)')
     parser.add_argument('--policy_max_grad_norm', type=float, default=0.5, help='max norm of gradients')
-    parser.add_argument('--encoder_max_grad_norm', type=float, default=1.0, help='max norm of gradients')
-    parser.add_argument('--decoder_max_grad_norm', type=float, default=1.0, help='max norm of gradients')
+    parser.add_argument('--encoder_max_grad_norm', type=float, default=None, help='max norm of gradients')
+    parser.add_argument('--decoder_max_grad_norm', type=float, default=None, help='max norm of gradients')
 
     # --- VAE TRAINING ---
 
@@ -82,13 +83,13 @@ def get_args(rest_args):
                         help='how many frames to pre-collect before training begins (useful to fill VAE buffer)')
     parser.add_argument('--vae_buffer_add_thresh', type=float, default=1,
                         help='probability of adding a new trajectory to buffer')
-    parser.add_argument('--vae_batch_num_trajs', type=int, default=10,
+    parser.add_argument('--vae_batch_num_trajs', type=int, default=15,
                         help='how many trajectories to use for VAE update')
-    parser.add_argument('--tbptt_stepsize', type=int, default=50,
+    parser.add_argument('--tbptt_stepsize', type=int, default=None,
                         help='stepsize for truncated backpropagation through time; None uses max (horizon of BAMDP)')
-    parser.add_argument('--vae_subsample_elbos', type=int, default=50,
+    parser.add_argument('--vae_subsample_elbos', type=int, default=None,
                         help='for how many timesteps to compute the ELBO; None uses all')
-    parser.add_argument('--vae_subsample_decodes', type=int, default=50,
+    parser.add_argument('--vae_subsample_decodes', type=int, default=None,
                         help='number of reconstruction terms to subsample; None uses all')
     parser.add_argument('--vae_avg_elbo_terms', type=boolean_argument, default=False,
                         help='Average ELBO terms (instead of sum)')
@@ -97,7 +98,7 @@ def get_args(rest_args):
     parser.add_argument('--num_vae_updates', type=int, default=3,
                         help='how many VAE update steps to take per meta-iteration')
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
-    parser.add_argument('--kl_weight', type=float, default=0.1, help='weight for the KL term')
+    parser.add_argument('--kl_weight', type=float, default=1.0, help='weight for the KL term')
 
     parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,
                         help='split batches up by task (to save memory or if tasks are of different length)')
@@ -115,9 +116,10 @@ def get_args(rest_args):
 
     # - decoder: rewards
     parser.add_argument('--decode_reward', type=boolean_argument, default=True, help='use reward decoder')
+    parser.add_argument('--normalise_rew_targets', type=boolean_argument, default=False, help='divide reward targets by largest rew seen')
     parser.add_argument('--rew_loss_coeff', type=float, default=1.0, help='weight for state loss (vs reward loss)')
-    parser.add_argument('--input_prev_state', type=boolean_argument, default=True, help='use prev state for rew pred')
-    parser.add_argument('--input_action', type=boolean_argument, default=True, help='use prev action for rew pred')
+    parser.add_argument('--input_prev_state', type=boolean_argument, default=False, help='use prev state for rew pred')
+    parser.add_argument('--input_action', type=boolean_argument, default=False, help='use prev action for rew pred')
     parser.add_argument('--reward_decoder_layers', nargs='+', type=int, default=[64, 32])
     parser.add_argument('--multihead_for_reward', type=boolean_argument, default=False,
                         help='one head per reward pred (i.e. per state)')

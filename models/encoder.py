@@ -304,16 +304,16 @@ class RNNCPCEncoder(nn.Module):
 
         if detach_every is None:
             # GRU cell (output is outputs for each time step, hidden_state is last output)
-            output, hidden = self.gru(h, hidden_state)
+            output, hidden_state = self.gru(h, hidden_state)
         else:
-            hidden = []
+            output_list = []
             for i in range(int(np.ceil(h.shape[0] / detach_every))):
                 curr_input = h[i*detach_every:i*detach_every+detach_every]  # pytorch caps if we overflow, nice
                 curr_output, hidden_state = self.gru(curr_input, hidden_state)
                 # detach hidden state; useful for BPTT when sequences are very long
                 hidden_state = hidden_state.detach()
-                hidden.append(hidden_state)
-            output = torch.cat(hidden, dim=0)
+                output_list.append(curr_output)
+            output = torch.cat(output_list, dim=0)
         output = output.clone()
 
         return output

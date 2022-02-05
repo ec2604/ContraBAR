@@ -59,12 +59,10 @@ class HalfCheetahEnv(HalfCheetahEnv_):
         episode_lengths = []
 
         if encoder is not None:
-            episode_latent_samples = [[] for _ in range(num_episodes)]
-            episode_latent_means = [[] for _ in range(num_episodes)]
-            episode_latent_logvars = [[] for _ in range(num_episodes)]
+            episode_hidden_states = [[] for _ in range(num_episodes)]
         else:
-            curr_latent_sample = curr_latent_mean = curr_latent_logvar = None
-            episode_latent_samples = episode_latent_means = episode_latent_logvars = None
+            episode_hidden_states = None
+
 
         # --- roll out policy ---
 
@@ -73,10 +71,10 @@ class HalfCheetahEnv(HalfCheetahEnv_):
         state, belief, task = utl.reset_env(env, args)
         start_state = state.clone()
 
-        # if hasattr(args, 'hidden_size'):
-        #     hidden_state = torch.zeros((1, args.hidden_size)).to(device)
-        # else:
-        #     hidden_state = None
+        if hasattr(args, 'hidden_size'):
+            hidden_state = torch.zeros((1, args.hidden_size)).to(device)
+        else:
+            hidden_state = None
 
         # keep track of what task we're in and the position of the cheetah
         pos = [[] for _ in range(args.max_rollouts_per_task)]
@@ -87,16 +85,12 @@ class HalfCheetahEnv(HalfCheetahEnv_):
             curr_rollout_rew = []
             pos[episode_idx].append(start_pos)
 
-            if encoder is not None:
-                if episode_idx == 0:
+            if episode_idx == 0:
+                if encoder is not None:
                     # reset to prior
-                    curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder.prior(1)
-                    curr_latent_sample = curr_latent_sample[0].to(device)
-                    curr_latent_mean = curr_latent_mean[0].to(device)
-                    curr_latent_logvar = curr_latent_logvar[0].to(device)
-                episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-                episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-                episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                    current_hidden_state = encoder.prior(1)
+                    current_hidden_state.to(device)
+            episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
             for step_idx in range(1, env._max_episode_steps + 1):
 
@@ -105,12 +99,14 @@ class HalfCheetahEnv(HalfCheetahEnv_):
                 else:
                     episode_prev_obs[episode_idx].append(state.clone())
                 # act
-                latent = utl.get_latent_for_policy(args,
-                                                   latent_sample=curr_latent_sample,
-                                                   latent_mean=curr_latent_mean,
-                                                   latent_logvar=curr_latent_logvar)
-                _, action = policy.act(state=state.view(-1), latent=latent, belief=belief, task=task, deterministic=True)
-
+                _, action = utl.select_action_cpc(args=args,
+                                                 policy=policy,
+                                                 belief=belief,
+                                                 task=task,
+                                                 deterministic=True,
+                                                 state=state,
+                                                 hidden_latent=current_hidden_state.squeeze(0)
+                                                 )
                 (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.reshape((1, -1)).float().to(device)
 
@@ -119,13 +115,11 @@ class HalfCheetahEnv(HalfCheetahEnv_):
 
                 if encoder is not None:
                     # update task embedding
-                    curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder(
+                    current_hidden_state = encoder(
                         action.reshape(1, -1).float().to(device), state, rew.reshape(1, -1).float().to(device),
                         hidden_state, return_prior=False)
 
-                    episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-                    episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-                    episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                    episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
                 episode_next_obs[episode_idx].append(state.clone())
                 episode_rewards[episode_idx].append(rew.clone())
@@ -140,10 +134,6 @@ class HalfCheetahEnv(HalfCheetahEnv_):
             episode_returns.append(sum(curr_rollout_rew))
             episode_lengths.append(step_idx)
 
-        # clean up
-        if encoder is not None:
-            episode_latent_means = [torch.stack(e) for e in episode_latent_means]
-            episode_latent_logvars = [torch.stack(e) for e in episode_latent_logvars]
 
         episode_prev_obs = [torch.cat(e) for e in episode_prev_obs]
         episode_next_obs = [torch.cat(e) for e in episode_next_obs]
@@ -175,10 +165,9 @@ class HalfCheetahEnv(HalfCheetahEnv_):
             plt.show()
 
         if not return_pos:
-            return episode_latent_means, episode_latent_logvars, \
-                   episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
+            return episode_hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                    episode_returns
         else:
-            return episode_latent_means, episode_latent_logvars, \
+            return episode_hidden_states, \
                    episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                    episode_returns, pos

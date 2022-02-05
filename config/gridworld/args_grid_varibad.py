@@ -94,15 +94,10 @@ def get_args(rest_args):
                         help='Average ELBO terms (instead of sum)')
     parser.add_argument('--vae_avg_reconstruction_terms', type=boolean_argument, default=False,
                         help='Average reconstruction terms (instead of sum)')
-    parser.add_argument('--num_vae_updates', type=int, default=50,
+    parser.add_argument('--num_vae_updates', type=int, default=30,
                         help='how many VAE update steps to take per meta-iteration')
-    parser.add_argument('--pretrain_len', type=int, default=1000, help='for how many updates to pre-train the VAE')
-    parser.add_argument('--kl_weight', type=float, default=0.01, help='weight for the KL term')
+    parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
 
-    parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,
-                        help='split batches up by task (to save memory or if tasks are of different length)')
-    parser.add_argument('--split_batches_by_elbo', type=boolean_argument, default=False,
-                        help='split batches up by elbo term (to save memory of if ELBOs are of different length)')
 
     # - encoder
     parser.add_argument('--action_embedding_size', type=int, default=0)
@@ -174,11 +169,12 @@ def get_args(rest_args):
     # --- OTHERS ---
 
     # logging, saving, evaluation
-    parser.add_argument('--log_interval', type=int, default=50, help='log interval, one log per n updates')
+    # logging, saving, evaluation
+    parser.add_argument('--log_interval', type=int, default=20, help='log interval, one log per n updates')
     parser.add_argument('--save_interval', type=int, default=1000, help='save interval, one save per n updates')
     parser.add_argument('--save_intermediate_models', type=boolean_argument, default=False, help='save all models')
-    parser.add_argument('--eval_interval', type=int, default=50, help='eval interval, one eval per n updates')
-    parser.add_argument('--vis_interval', type=int, default=1500, help='visualisation interval, one eval per n updates')
+    parser.add_argument('--eval_interval', type=int, default=20, help='eval interval, one eval per n updates')
+    parser.add_argument('--vis_interval', type=int, default=100, help='visualisation interval, one eval per n updates')
     parser.add_argument('--results_log_dir', default=None, help='directory to save results (None uses ./logs)')
 
     # general settings

@@ -79,7 +79,7 @@ class MetaLearner:
             self.args.action_dim = self.envs.action_space.shape[0]
 
         # initialise CPC and policy
-        self.cpc_encoder = VaribadCPC(self.args, self.logger, lambda: self.iter_idx, lookahead_factor=1)
+        self.cpc_encoder = VaribadCPC(self.args, self.logger, lambda: self.iter_idx)
         self.policy_storage = self.initialise_policy_storage()
         self.policy = self.initialise_policy()
 
@@ -221,7 +221,7 @@ class MetaLearner:
                                                     next_state.clone(),
                                                     rew_raw.clone(),
                                                     done.clone(),
-                                                    task.clone() if task is not None else None)
+                                                    task.clone())
 
                 # add the obs before reset to the policy storage
                 self.policy_storage.next_state[step] = next_state.clone()
@@ -240,7 +240,7 @@ class MetaLearner:
                 self.policy_storage.insert(
                     state=next_state,
                     belief=belief,
-                    task=task,
+                    task=task if self.args.pass_task_to_policy else None,
                     actions=action,
                     rewards_raw=rew_raw,
                     rewards_normalised=rew_normalised,
@@ -269,7 +269,7 @@ class MetaLearner:
 
                     train_stats = self.update(state=prev_state,
                                               belief=belief,
-                                              task=task,
+                                              task=task if self.args.pass_task_to_policy else None,
                                               hidden=hidden_state.squeeze(0))
 
                     # log
@@ -348,22 +348,14 @@ class MetaLearner:
 
         if (self.iter_idx + 1) % self.args.vis_interval == 0:
             ret_rms = self.envs.venv.ret_rms if self.args.norm_rew_for_policy else None
-            pass
-            # utl_eval.visualise_behaviour(args=self.args,
-            #                              policy=self.policy,
-            #                              image_folder=self.logger.full_output_folder,
-            #                              iter_idx=self.iter_idx,
-            #                              ret_rms=ret_rms,
-            #                              encoder=self.vae.encoder,
-            #                              reward_decoder=self.vae.reward_decoder,
-            #                              state_decoder=self.vae.state_decoder,
-            #                              task_decoder=self.vae.task_decoder,
-            #                              compute_rew_reconstruction_loss=self.vae.compute_rew_reconstruction_loss,
-            #                              compute_state_reconstruction_loss=self.vae.compute_state_reconstruction_loss,
-            #                              compute_task_reconstruction_loss=self.vae.compute_task_reconstruction_loss,
-            #                              compute_kl_loss=self.vae.compute_kl_loss,
-            #                              tasks=self.train_tasks,
-            #                              )
+            utl_eval.visualise_behaviour(args=self.args,
+                                         policy=self.policy,
+                                         image_folder=self.logger.full_output_folder,
+                                         iter_idx=self.iter_idx,
+                                         ret_rms=ret_rms,
+                                         encoder=self.cpc_encoder.encoder,
+                                         tasks=self.train_tasks,
+                                         )
 
         # --- evaluate policy ----
         if (self.iter_idx + 1) % self.args.eval_interval == 0:
@@ -406,12 +398,6 @@ class MetaLearner:
 
                 torch.save(self.policy.actor_critic, os.path.join(save_path, f"policy{idx_label}.pt"))
                 torch.save(self.cpc_encoder.encoder, os.path.join(save_path, f"encoder{idx_label}.pt"))
-                # if self.vae.state_decoder is not None:
-                #     torch.save(self.vae.state_decoder, os.path.join(save_path, f"state_decoder{idx_label}.pt"))
-                # if self.vae.reward_decoder is not None:
-                #     torch.save(self.vae.reward_decoder, os.path.join(save_path, f"reward_decoder{idx_label}.pt"))
-                # if self.vae.task_decoder is not None:
-                #     torch.save(self.vae.task_decoder, os.path.join(save_path, f"task_decoder{idx_label}.pt"))
 
                 # save normalisation params of envs
                 if self.args.norm_rew_for_policy:
@@ -450,6 +436,7 @@ class MetaLearner:
             for [model, name] in [
                 [self.policy.actor_critic, 'policy'],
                 [self.cpc_encoder.encoder, 'encoder'],
+                [self.cpc_encoder.mlp, 'cpc_mlp']
                 #[self.vae.reward_decoder, 'reward_decoder'],
                 #[self.vae.state_decoder, 'state_transition_decoder'],
                # [self.vae.task_decoder, 'task_decoder']

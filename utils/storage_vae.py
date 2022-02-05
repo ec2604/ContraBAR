@@ -32,10 +32,7 @@ class RolloutStorageVAE(object):
             self.next_state = torch.zeros((self.max_traj_len, self.max_buffer_size, state_dim))
             self.actions = torch.zeros((self.max_traj_len, self.max_buffer_size, action_dim))
             self.rewards = torch.zeros((self.max_traj_len, self.max_buffer_size, 1))
-            if task_dim is not None:
-                self.tasks = torch.zeros((self.max_buffer_size, task_dim))
-            else:
-                self.tasks = None
+            self.tasks = torch.zeros((self.max_buffer_size, task_dim))
             self.trajectory_lens = [0] * self.max_buffer_size
 
         # storage for each running process (stored on GPU)

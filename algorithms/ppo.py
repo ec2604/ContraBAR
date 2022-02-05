@@ -173,7 +173,9 @@ class PPO:
 
         if (not rlloss_through_encoder) and (self.optimiser_vae is not None):
             for _ in range(self.args.num_vae_updates):
-                compute_cpc_loss(update=True)
+                cpc_loss = None
+                while cpc_loss is None:
+                    cpc_loss = compute_cpc_loss(update=True)
 
         if self.lr_scheduler_policy is not None:
             self.lr_scheduler_policy.step()

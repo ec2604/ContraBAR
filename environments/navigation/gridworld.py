@@ -202,7 +202,6 @@ class GridNavi(gym.Env):
                             policy,
                             iter_idx,
                             encoder=None,
-                            reward_decoder=None,
                             image_folder=None,
                             **kwargs
                             ):
@@ -277,7 +276,8 @@ class GridNavi(gym.Env):
                                                  belief=belief,
                                                  task=task,
                                                  deterministic=True,
-                                                 hidden_latent=current_hidden_state.view(-1)
+                                                 state=state,
+                                                 hidden_latent=current_hidden_state.squeeze(0)
                                                  )
 
 
@@ -286,7 +286,7 @@ class GridNavi(gym.Env):
 
                 if encoder is not None:
                     # update task embedding
-                    hidden_state = encoder(action.float().to(device),
+                    current_hidden_state = encoder(action.float().to(device),
                         state,
                         rew_raw.reshape((1, 1)).float().to(device),
                         current_hidden_state,
@@ -326,12 +326,8 @@ class GridNavi(gym.Env):
 
         # plot behaviour & visualise belief in env
 
-        rew_pred_means, rew_pred_vars = plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
-                                                episode_hidden_states,
+        rew_pred_means, rew_pred_vars = plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states,
                                                 image_folder, iter_idx, episode_beliefs)
-
-        if reward_decoder:
-            plot_rew_reconstruction(env, rew_pred_means, rew_pred_vars, image_folder, iter_idx)
 
         return episode_hidden_states,episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                episode_returns
@@ -388,8 +384,7 @@ def plot_rew_reconstruction(env,
         plt.show()
 
 
-def plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
-          episode_hidden_states, image_folder, iter_idx, episode_beliefs):
+def plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states, image_folder, iter_idx, episode_beliefs):
     """
     Plot behaviour and belief.
     """
@@ -421,17 +416,6 @@ def plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
             # plot the behaviour
             plot_behaviour(env, curr_obs, curr_goal)
 
-            # if reward_decoder is not None:
-            #     # visualise belief in env
-            #     rm, rv = compute_beliefs(env,
-            #                              args,
-            #                              reward_decoder,
-            #                              curr_means[-1],
-            #                              curr_logvars[-1],
-            #                              curr_goal)
-            #     rew_pred_means[episode_idx].append(rm)
-            #     rew_pred_vars[episode_idx].append(rv)
-            #     plot_belief(env, rm, args)
             if episode_beliefs is not None:
                 curr_beliefs = episode_beliefs[episode_idx][step_idx]
                 plot_belief(env, curr_beliefs, args)
@@ -443,10 +427,6 @@ def plot_bb(env, args, episode_all_obs, episode_goals, reward_decoder,
 
             if step_idx == 0:
                 plt.ylabel('Episode {}'.format(episode_idx + 1))
-
-    if reward_decoder is not None:
-        rew_pred_means = [torch.stack(r) for r in rew_pred_means]
-        rew_pred_vars = [torch.stack(r) for r in rew_pred_vars]
 
     # save figure that shows policy behaviour
     plt.tight_layout()
