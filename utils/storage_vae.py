@@ -28,8 +28,8 @@ class RolloutStorageVAE(object):
 
         # buffers for completed rollouts (stored on CPU)
         if self.max_buffer_size > 0:
-            self.prev_state = torch.zeros((self.max_traj_len, self.max_buffer_size, state_dim))
-            self.next_state = torch.zeros((self.max_traj_len, self.max_buffer_size, state_dim))
+            self.prev_state = torch.zeros((self.max_traj_len, self.max_buffer_size, *state_dim))
+            self.next_state = torch.zeros((self.max_traj_len, self.max_buffer_size, *state_dim))
             self.actions = torch.zeros((self.max_traj_len, self.max_buffer_size, action_dim))
             self.rewards = torch.zeros((self.max_traj_len, self.max_buffer_size, 1))
             self.tasks = torch.zeros((self.max_buffer_size, task_dim))
@@ -38,8 +38,8 @@ class RolloutStorageVAE(object):
         # storage for each running process (stored on GPU)
         self.num_processes = num_processes
         self.curr_timestep = torch.zeros((num_processes)).long()  # count environment steps so we know where to insert
-        self.running_prev_state = torch.zeros((self.max_traj_len, num_processes, state_dim)).to(device)  # for each episode will have obs 0...N-1
-        self.running_next_state = torch.zeros((self.max_traj_len, num_processes, state_dim)).to(device)  # for each episode will have obs 1...N
+        self.running_prev_state = torch.zeros((self.max_traj_len, num_processes, *state_dim)).to(device)  # for each episode will have obs 0...N-1
+        self.running_next_state = torch.zeros((self.max_traj_len, num_processes, *state_dim)).to(device)  # for each episode will have obs 1...N
         self.running_rewards = torch.zeros((self.max_traj_len, num_processes, 1)).to(device)
         self.running_actions = torch.zeros((self.max_traj_len, num_processes, action_dim)).to(device)
         if task_dim is not None:

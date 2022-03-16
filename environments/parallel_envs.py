@@ -49,11 +49,11 @@ def make_vec_envs(env_name, seed, num_processes, gamma,
     else:
         envs = DummyVecEnv(envs)
 
-    if len(envs.observation_space.shape) == 1:
-        if gamma is None:
-            envs = VecNormalize(envs, normalise_rew=normalise_rew, ret_rms=ret_rms)
-        else:
-            envs = VecNormalize(envs, normalise_rew=normalise_rew, ret_rms=ret_rms, gamma=gamma)
+    #if len(envs.observation_space.shape) == 1:
+    if gamma is None:
+        envs = VecNormalize(envs, normalise_rew=normalise_rew, ret_rms=ret_rms)
+    else:
+        envs = VecNormalize(envs, normalise_rew=normalise_rew, ret_rms=ret_rms, gamma=gamma)
 
     envs = VecPyTorch(envs, device)
 
@@ -78,7 +78,10 @@ class VecPyTorch(VecEnvWrapper):
     def reset(self, index=None, task=None):
         if task is not None:
             assert isinstance(task, list)
-        state = self.venv.reset(index=index, task=task)
+        if isinstance(self.venv, VecNormalize):
+            state = self.venv.reset(index=index, task=task)
+        else:
+            state = self.venv.reset(task)
         if isinstance(state, list):
             state = [torch.from_numpy(s).float().to(self.device) for s in state]
         else:

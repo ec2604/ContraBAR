@@ -46,7 +46,7 @@ class Policy(nn.Module):
                  policy_initialisation,  # orthogonal / normc
                  # output
                  action_space,
-                 init_std,
+                 init_std, **kwargs
                  ):
         """
         The policy can get any of these as input:
@@ -91,16 +91,20 @@ class Policy(nn.Module):
         self.norm_task = self.args.norm_task_for_policy and (dim_task is not None)
         if self.pass_task_to_policy and self.norm_task:
             self.task_rms = utl.RunningMeanStd(shape=(dim_task))
-
-        curr_input_dim = dim_state * int(self.pass_state_to_policy) + \
-                         dim_latent * int(self.pass_latent_to_policy) + \
+        curr_input_dim = dim_latent * int(self.pass_latent_to_policy) + \
                          dim_belief * int(self.pass_belief_to_policy) + \
                          dim_task * int(self.pass_task_to_policy)
+        if self.pass_state_to_policy:
+            curr_input_dim += dim_state[0]
         # initialise encoders for separate inputs
         self.use_state_encoder = self.args.policy_state_embedding_dim is not None
         if self.pass_state_to_policy and self.use_state_encoder:
-            self.state_encoder = utl.FeatureExtractor(dim_state, self.args.policy_state_embedding_dim, self.activation_function)
-            curr_input_dim = curr_input_dim - dim_state + self.args.policy_state_embedding_dim
+            if self.args.transform_state_to_latent:
+                self.state_encoder = kwargs['encoder'].state_encoder
+                curr_input_dim = curr_input_dim - dim_state[0] + self.args.state_embedding_size
+            else:
+                self.state_encoder = utl.FeatureExtractor(*dim_state, self.args.policy_state_embedding_dim, self.activation_function)
+                curr_input_dim = curr_input_dim - dim_state[0] + self.args.policy_state_embedding_dim
         self.use_latent_encoder = self.args.policy_latent_embedding_dim is not None
         if self.pass_latent_to_policy and self.use_latent_encoder:
             self.latent_encoder = utl.FeatureExtractor(dim_latent, self.args.policy_latent_embedding_dim, self.activation_function)
@@ -164,7 +168,14 @@ class Policy(nn.Module):
             if self.norm_state:
                 state = (state - self.state_rms.mean) / torch.sqrt(self.state_rms.var + 1e-8)
             if self.use_state_encoder:
-                state = self.state_encoder(state)
+                if self.args.transform_state_to_latent:
+                    orig_state_shape = state.shape
+                    state = state.reshape((-1, *state.shape[-3:]))
+                    with torch.no_grad():
+                        state = self.state_encoder(state)
+                        state = state.reshape(*orig_state_shape[:-3], -1)
+                else:
+                    state = self.state_encoder(state)
         else:
             state = torch.zeros(0, ).to(device)
         if self.pass_latent_to_policy:

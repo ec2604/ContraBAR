@@ -3,8 +3,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-
+from math import floor
 from utils import helpers as utl
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -183,7 +184,9 @@ class RNNEncoder(nn.Module):
 
         return latent_sample, latent_mean, latent_logvar, output
 
+
 class RNNCPCEncoder(nn.Module):
+
     def __init__(self,
                  args,
                  # network size
@@ -206,7 +209,10 @@ class RNNCPCEncoder(nn.Module):
         self.hidden_size = hidden_size
 
         # embed action, state, reward
-        self.state_encoder = utl.FeatureExtractor(state_dim, state_embed_dim, F.relu)
+        if len(state_dim) > 1:
+            self.state_encoder = ImageEncoder(state_dim, state_embed_dim, self.args.image_encoder_layers)
+        else:
+            self.state_encoder = utl.FeatureExtractor(*state_dim, state_embed_dim, F.relu)
         self.action_encoder = utl.FeatureExtractor(action_dim, action_embed_dim, F.relu)
         self.reward_encoder = utl.FeatureExtractor(reward_size, reward_embed_size, F.relu)
 
@@ -216,7 +222,7 @@ class RNNCPCEncoder(nn.Module):
         for i in range(len(layers_before_gru)):
             self.fc_before_gru.append(nn.Linear(curr_input_dim, layers_before_gru[i]))
             curr_input_dim = layers_before_gru[i]
-
+        self.ln = nn.LayerNorm(curr_input_dim)
         # recurrent unit
         # TODO: TEST RNN vs GRU vs LSTM
         self.gru = nn.GRU(input_size=curr_input_dim,
@@ -240,7 +246,6 @@ class RNNCPCEncoder(nn.Module):
         # # output layer
         # self.fc_mu = nn.Linear(curr_input_dim, latent_dim)
         # self.fc_logvar = nn.Linear(curr_input_dim, latent_dim)
-
     def reset_hidden(self, hidden_state, done):
         """ Reset the hidden state where the BAMDP was done (i.e., we get a new task) """
         if hidden_state.dim() != done.dim():
@@ -266,13 +271,21 @@ class RNNCPCEncoder(nn.Module):
 
         # shape should be: sequence_len x batch_size x hidden_size
         actions = actions.reshape((-1, *actions.shape[-2:]))
-        states = states.reshape((-1, *states.shape[-2:]))
+        if len(states.shape) > 3:
+            orig_state_shape = states.shape
+            states = states.reshape((-1, *states.shape[-3:]))
+            hs = self.state_encoder(states)
+            hs = hs.reshape(*orig_state_shape[:-3],-1)
+        else:
+            states = states.reshape((-1, *states.shape[-2:]))
+            hs = self.state_encoder(states)
         rewards = rewards.reshape((-1, *rewards.shape[-2:]))
 
         # extract features for states, actions, rewards
         ha = self.action_encoder(actions)
-        hs = self.state_encoder(states)
         hr = self.reward_encoder(rewards)
+        if len(hs.shape) == 2:
+            hs = hs.unsqueeze(0)
         h = torch.cat((hs, hr), dim=2)
         if with_actions:
             h = torch.cat((ha, h), dim=2)
@@ -289,6 +302,7 @@ class RNNCPCEncoder(nn.Module):
         In the latter case, we return embeddings of length sequence_len+1 since they include the prior.
         """
         h = self.embed_input(actions, states, rewards)
+        h = self.ln(h)
         if hidden_state is not None:
             # if the sequence_len is one, this will add a dimension at dim 0 (otherwise will be the same)
             hidden_state = hidden_state.reshape((-1, *hidden_state.shape[-2:]))
@@ -317,3 +331,46 @@ class RNNCPCEncoder(nn.Module):
         output = output.clone()
 
         return output
+
+class ImageEncoder(nn.Module):
+
+    def __init__(self, state_dim, state_embed_dim, hidden_sizes):
+        super(ImageEncoder, self).__init__()
+        self.state_dim = state_dim
+        self.state_embed_dim = state_embed_dim
+        self.activation_func = nn.ReLU(inplace=True)
+        self.hidden_sizes= hidden_sizes # [(channels, kernel, stride),...]
+        self.convs = nn.ModuleList([])
+
+        input_channels = state_dim[0]
+        x, y = state_dim[1:]
+        dilation = 1
+        padding = 0
+
+
+
+
+        for hidden in self.hidden_sizes:
+            out_channels, kernel, stride = hidden
+            conv = nn.Conv2d(in_channels=input_channels, out_channels=out_channels, kernel_size=kernel,
+                                        stride=stride)
+            self.convs.append(conv)
+            input_channels=out_channels
+            x = floor(((x+2*padding-dilation*(kernel-1)-1)/stride)+1)
+            y = floor(((y+2*padding-dilation*(kernel-1)-1)/stride)+1)
+
+        output_size = x*y*input_channels
+        self.fc = nn.Linear(output_size, state_embed_dim)
+ #       self.ln = nn.LayerNorm(state_embed_dim)
+
+
+    def forward(self, input):
+        out = input
+        if out.max() > 1:
+            out = out / 255
+        for conv in self.convs:
+            out = self.activation_func(conv(out))
+        out = out.view(input.shape[0], -1)
+        out = self.activation_func(self.fc(out))
+        return out
+

@@ -106,7 +106,9 @@ def visualise_behaviour(args,
                         iter_idx,
                         ret_rms,
                         tasks,
-                        encoder=None
+                        encoder=None,
+                        reward_decoder=None,
+                        logger=None
                         ):
     # initialise environment
     env = make_vec_envs(env_name=args.env_name,
@@ -133,21 +135,23 @@ def visualise_behaviour(args,
                                                  policy=policy,
                                                  iter_idx=iter_idx,
                                                  encoder=encoder,
-                                                 image_folder=image_folder
+                                                 image_folder=image_folder,
+                                                 reward_decoder=reward_decoder,
+                                                 logger=logger
                                                  )
     else:
         traj = get_test_rollout(args, env, policy, encoder)
 
     hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, episode_returns = traj
 
-    if hidden_states is not None:
+    # if hidden_states is not None:
         # plot_latents(latent_means, latent_logvars,
         #              image_folder=image_folder,
         #              iter_idx=iter_idx
         #              )
 
-        if not (args.disable_decoder and args.disable_kl_term):
-            pass
+        # if not (args.disable_decoder and args.disable_kl_term):
+        #     pass
             # plot_vae_loss(args,
             #               hidden_states,
             #               episode_prev_obs,

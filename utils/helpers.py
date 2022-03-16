@@ -370,3 +370,13 @@ def clip(value, low, high):
 
     clipped_value = torch.max(torch.min(value, high), low)
     return clipped_value
+
+def get_pos_grid(pos, device):
+    X_SIZE = 5
+    Y_SIZE = 5
+    grid = torch.zeros(len(pos), X_SIZE*Y_SIZE, dtype=torch.float32, device=device)
+    idx = torch.tensor(np.array([pos_[0]*(Y_SIZE) + pos_[1] for pos_ in pos]),device=device).view(-1, 1)
+    grid.scatter_(dim=1, index=idx, src=torch.full_like(grid, fill_value=1))
+    return grid.view(-1, X_SIZE, Y_SIZE)
+
+

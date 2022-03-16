@@ -56,11 +56,15 @@ class VariBadWrapper(gym.Wrapper):
             if isinstance(self.observation_space, spaces.Box) or isinstance(self.observation_space,
                                                                             rand_param_envs.gym.spaces.box.Box):
                 if len(self.observation_space.shape) > 1:
-                    raise ValueError  # can't add additional info for obs of more than 1D
-                self.observation_space = spaces.Box(low=np.array([*self.observation_space.low, 0]),
-                                                    # shape will be deduced from this
-                                                    high=np.array([*self.observation_space.high, 1])
-                                                    )
+                    self.observation_space = spaces.Box(low=np.concatenate([np.array([*self.observation_space.low]),
+                                                        np.zeros((1, *self.observation_space.shape[1:]))]),
+                                                        high = np.concatenate([np.array([*self.observation_space.low]),
+                                                        np.ones((1, *self.observation_space.shape[1:]))]))
+                else:
+                    self.observation_space = spaces.Box(low=np.array([*self.observation_space.low, 0]),
+                                                        # shape will be deduced from this
+                                                        high=np.array([*self.observation_space.high, 1])
+                                                        )
             else:
                 # TODO: add something simliar for the other possible spaces,
                 # "Space", "Discrete", "MultiDiscrete", "MultiBinary", "Tuple", "Dict", "flatdim", "flatten", "unflatten"
@@ -102,7 +106,10 @@ class VariBadWrapper(gym.Wrapper):
         self.step_count_bamdp = 0
         self.done_mdp = False
         if self.add_done_info:
-            state = np.concatenate((state, [0.0]))
+            if len(self.observation_space.shape) > 1:
+                state = np.concatenate([state, np.zeros((1, *self.observation_space.shape[1:]))])
+            else:
+                state = np.concatenate((state, [0.0]))
 
         return state
 
@@ -110,7 +117,10 @@ class VariBadWrapper(gym.Wrapper):
         """ Resets the underlying MDP only (*not* the task). """
         state = self.env.reset()
         if self.add_done_info:
-            state = np.concatenate((state, [0.0]))
+            if len(self.observation_space.shape) > 1:
+                state = np.concatenate([state, np.zeros((1, *self.observation_space.shape[1:]))])
+            else:
+                state = np.concatenate((state, [0.0]))
         self.done_mdp = False
         return state
 
@@ -122,7 +132,10 @@ class VariBadWrapper(gym.Wrapper):
         info['done_mdp'] = self.done_mdp
 
         if self.add_done_info:
-            state = np.concatenate((state, [float(self.done_mdp)]))
+            if len(self.observation_space.shape) > 1:
+                state = np.concatenate((state, np.ones((1, *self.observation_space.shape[1:]))*float(self.done_mdp)))
+            else:
+                state = np.concatenate((state, [float(self.done_mdp)]))
 
         self.step_count_bamdp += 1
         # if we want to maximise performance over multiple episodes,

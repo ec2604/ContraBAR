@@ -58,3 +58,6 @@ class TBLogger:
 
     def add_hist(self, name, value, x_pos):
         self.writer.add_histogram(name, value, x_pos)
+
+    def add_figure(self, name, value, x_pos):
+        self.writer.add_figure(name, value, x_pos)

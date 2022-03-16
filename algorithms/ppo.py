@@ -22,7 +22,7 @@ class PPO:
                  num_mini_batch=5,
                  eps=None,
                  use_huber_loss=True,
-                 use_clipped_value_loss=True,
+                 use_clipped_value_loss=True,**kwargs
                  ):
         self.args = args
 
@@ -92,7 +92,6 @@ class PPO:
                 state_batch, belief_batch, task_batch, \
                 actions_batch, hidden_batch, value_preds_batch, \
                 return_batch, old_action_log_probs_batch, adv_targ = sample
-
                 if not rlloss_through_encoder:
                     state_batch = state_batch.detach()
                     # if latent_sample_batch is not None:
@@ -172,10 +171,10 @@ class PPO:
                                                                                               'tbptt_stepsize') else None)
 
         if (not rlloss_through_encoder) and (self.optimiser_vae is not None):
-            for _ in range(self.args.num_vae_updates):
+            for i in range(self.args.num_vae_updates):
                 cpc_loss = None
                 while cpc_loss is None:
-                    cpc_loss = compute_cpc_loss(update=True)
+                     cpc_loss = compute_cpc_loss(update=True, log= i == (self.args.num_vae_updates -1))
 
         if self.lr_scheduler_policy is not None:
             self.lr_scheduler_policy.step()

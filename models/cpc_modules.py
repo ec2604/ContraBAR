@@ -30,3 +30,15 @@ class actionGRU(nn.Module):
     def forward(self, x):
         out = self.gru1(x)
         return out
+
+class statePredictor(nn.Module):
+    def __init__(self, input_dim, state_dim):
+        super(statePredictor, self).__init__()
+        # Check input size
+        self.hidden1 = nn.Linear(input_dim, input_dim // 2)
+        self.relu1 = nn.ReLU()
+        self.hidden2 = nn.Linear(input_dim // 2, 100)
+    def forward(self, x):
+        out = self.relu1(self.hidden1(x))
+        out = self.hidden2(out)
+        return out

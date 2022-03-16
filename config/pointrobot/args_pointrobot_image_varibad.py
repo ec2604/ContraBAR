@@ -11,12 +11,13 @@ def get_args(rest_args):
     parser.add_argument('--num_frames', type=int, default=5e7, help='number of frames to train')
     parser.add_argument('--max_rollouts_per_task', type=int, default=3)
     parser.add_argument('--exp_label', default='varibad', help='label (typically name of method)')
-    parser.add_argument('--env_name', default='SparsePointEnv-v0', help='environment to train on')
+    parser.add_argument('--env_name', default='PointEnvImage-v0', help='environment to train on')
 
     # --- POLICY ---
 
     # what to pass to the policy (note this is after the encoder)
     parser.add_argument('--pass_state_to_policy', type=boolean_argument, default=True, help='condition policy on state')
+    parser.add_argument('--transform_state_to_latent',type=boolean_argument, default=True, help='transform state to encoded state')
     parser.add_argument('--pass_latent_to_policy', type=boolean_argument, default=True, help='condition policy on VAE latent')
     parser.add_argument('--pass_belief_to_policy', type=boolean_argument, default=False, help='condition policy on ground-truth belief')
     parser.add_argument('--pass_task_to_policy', type=boolean_argument, default=False, help='condition policy on ground-truth task description')
@@ -28,12 +29,12 @@ def get_args(rest_args):
     parser.add_argument('--policy_task_embedding_dim', type=int, default=None)
 
     # normalising (inputs/rewards/outputs)
-    parser.add_argument('--norm_state_for_policy', type=boolean_argument, default=True, help='normalise state input')
+    parser.add_argument('--norm_state_for_policy', type=boolean_argument, default=False, help='normalise state input')
     parser.add_argument('--norm_latent_for_policy', type=boolean_argument, default=False, help='normalise latent input')
     parser.add_argument('--norm_belief_for_policy', type=boolean_argument, default=True, help='normalise belief input')
     parser.add_argument('--norm_task_for_policy', type=boolean_argument, default=True, help='normalise task input')
     parser.add_argument('--norm_rew_for_policy', type=boolean_argument, default=True, help='normalise rew for RL train')
-    parser.add_argument('--norm_actions_pre_sampling', type=boolean_argument, default=False, help='normalise policy output')
+    parser.add_argument('--norm_actions_pre_sampling', type=boolean_argument, default=True, help='normalise policy output')
     parser.add_argument('--norm_actions_post_sampling', type=boolean_argument, default=False, help='normalise policy output')
 
     # network
@@ -55,7 +56,7 @@ def get_args(rest_args):
 
     # other hyperparameters
     parser.add_argument('--lr_policy', type=float, default=7e-4, help='learning rate (default: 7e-4)')
-    parser.add_argument('--num_processes', type=int, default=8,
+    parser.add_argument('--num_processes', type=int, default=16,
                         help='how many training CPU processes / parallel environments to use (default: 16)')
     parser.add_argument('--policy_num_steps', type=int, default=200,
                         help='number of env steps to do (per process) before updating')
@@ -77,15 +78,15 @@ def get_args(rest_args):
 
     # general
     parser.add_argument('--lr_vae', type=float, default=0.001)
-    parser.add_argument('--size_vae_buffer', type=int, default=10000,
+    parser.add_argument('--size_vae_buffer', type=int, default=100,
                         help='how many trajectories (!) to keep in VAE buffer')
-    parser.add_argument('--precollect_len', type=int, default=5000,
+    parser.add_argument('--precollect_len', type=int, default=15000,
                         help='how many frames to pre-collect before training begins (useful to fill VAE buffer)')
     parser.add_argument('--vae_buffer_add_thresh', type=float, default=1,
                         help='probability of adding a new trajectory to buffer')
-    parser.add_argument('--vae_batch_num_trajs', type=int, default=20,
+    parser.add_argument('--vae_batch_num_trajs', type=int, default=25,
                         help='how many trajectories to use for VAE update')
-    parser.add_argument('--tbptt_stepsize', type=int, default=None,
+    parser.add_argument('--tbptt_stepsize', type=int, default=50,
                         help='stepsize for truncated backpropagation through time; None uses max (horizon of BAMDP)')
     parser.add_argument('--vae_subsample_elbos', type=int, default=None,
                         help='for how many timesteps to compute the ELBO; None uses all')
@@ -107,13 +108,14 @@ def get_args(rest_args):
 
     # - encoder
     parser.add_argument('--action_embedding_size', type=int, default=16)
-    parser.add_argument('--state_embedding_size', type=int, default=32)
+    parser.add_argument('--state_embedding_size', type=int, default=50)
     parser.add_argument('--reward_embedding_size', type=int, default=16)
     parser.add_argument('--encoder_layers_before_gru', nargs='+', type=int, default=[])
     parser.add_argument('--encoder_gru_hidden_size', type=int, default=128, help='dimensionality of RNN hidden state')
     parser.add_argument('--encoder_layers_after_gru', nargs='+', type=int, default=[])
-    parser.add_argument('--latent_dim', type=int, default=50, help='dimensionality of latent space')
-    parser.add_argument('--lookahead_factor', type=int, default=60, help='lookahead for CPC')
+    parser.add_argument('--latent_dim', type=int, default=20, help='dimensionality of latent space')
+    parser.add_argument('--lookahead_factor', type=int, default=3, help='lookahead for CPC')
+    parser.add_argument('--image_encoder_layers', default=[(4, 3, 2), (4, 3, 2), (32, 3, 2)])
     # - decoder: rewards
     parser.add_argument('--decode_reward', type=boolean_argument, default=True, help='use reward decoder')
     parser.add_argument('--normalise_rew_targets', type=boolean_argument, default=False, help='divide reward targets by largest rew seen')
@@ -176,11 +178,11 @@ def get_args(rest_args):
     # --- OTHERS ---
 
     # logging, saving, evaluation
-    parser.add_argument('--log_interval', type=int, default=25, help='log interval, one log per n updates')
+    parser.add_argument('--log_interval', type=int, default=20, help='log interval, one log per n updates')
     parser.add_argument('--save_interval', type=int, default=500, help='save interval, one save per n updates')
     parser.add_argument('--save_intermediate_models', type=boolean_argument, default=False, help='save all models')
     parser.add_argument('--eval_interval', type=int, default=25, help='eval interval, one eval per n updates')
-    parser.add_argument('--vis_interval', type=int, default=500, help='visualisation interval, one eval per n updates')
+    parser.add_argument('--vis_interval', type=int, default=20, help='visualisation interval, one eval per n updates')
     parser.add_argument('--results_log_dir', default=None, help='directory to save results (None uses ./logs)')
 
     # general settings

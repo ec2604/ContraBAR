@@ -13,7 +13,7 @@ from config.gridworld import \
     args_grid_belief_oracle, args_grid_rl2, args_grid_varibad
 from config.pointrobot import \
     args_pointrobot_multitask, args_pointrobot_varibad, args_pointrobot_rl2, args_pointrobot_humplik,\
-    args_pointrobot_wind_varibad, args_pointrobot_wind_dense_varibad
+    args_pointrobot_wind_varibad, args_pointrobot_wind_dense_varibad, args_pointrobot_image_varibad
 from config.mujoco import \
     args_cheetah_dir_multitask, args_cheetah_dir_expert, args_cheetah_dir_rl2, args_cheetah_dir_varibad, \
     args_cheetah_vel_multitask, args_cheetah_vel_expert, args_cheetah_vel_rl2, args_cheetah_vel_varibad, \
@@ -23,6 +23,7 @@ from config.mujoco import \
     args_ant_goal_humplik, \
     args_walker_multitask, args_walker_expert, args_walker_avg, args_walker_rl2, args_walker_varibad, \
     args_humanoid_dir_varibad, args_humanoid_dir_rl2, args_humanoid_dir_multitask, args_humanoid_dir_expert
+from config.dm_control import args_reacher_varibad
 from environments.parallel_envs import make_vec_envs
 from learner import Learner
 from metalearner_cpc import MetaLearner
@@ -57,6 +58,8 @@ def main():
         args = args_pointrobot_wind_varibad.get_args(rest_args)
     elif env == 'pointrobot_wind_dense_varibad':
         args = args_pointrobot_wind_dense_varibad.get_args(rest_args)
+    elif env =='pointrobot_image_varibad':
+        args = args_pointrobot_image_varibad.get_args(rest_args)
     # --- MUJOCO ---
 
     # - CheetahDir -
@@ -124,6 +127,10 @@ def main():
         args = args_humanoid_dir_varibad.get_args(rest_args)
     elif env == 'humanoid_dir_rl2':
         args = args_humanoid_dir_rl2.get_args(rest_args)
+    #
+    # - Reacher -
+    elif env == 'reacher':
+        args = args_reacher_varibad.get_args(rest_args)
     else:
         raise Exception("Invalid Environment")
 

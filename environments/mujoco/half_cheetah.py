@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from gym.envs.mujoco import HalfCheetahEnv as HalfCheetahEnv_
 
-from utils import helpers as utl
+from utils import helpers as utlutl
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 

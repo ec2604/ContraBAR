@@ -81,6 +81,24 @@ register(
     max_episode_steps=100,
 )
 register(
+    'PointEnvImage-v0',
+    entry_point='environments.navigation.point_robot_image:PointEnv',
+    kwargs={
+            'max_episode_steps': 100,
+            'goal_sampler': 'semi-circle'
+            },
+    max_episode_steps=100,
+)
+register(
+    'SparsePointEnvImage-v0',
+    entry_point='environments.navigation.point_robot_image:SparsePointEnv',
+    kwargs={
+            'max_episode_steps': 100,
+            'goal_sampler': 'semi-circle'
+            },
+    max_episode_steps=100,
+)
+register(
     'PointEnvWind-v0',
     entry_point='environments.navigation.point_robot_wind:PointEnvWind',
     kwargs={'max_episode_steps': 100,
@@ -114,4 +132,14 @@ register(
     'GridNavi-v0',
     entry_point='environments.navigation.gridworld:GridNavi',
     kwargs={'num_cells': 5, 'num_steps': 15},
+)
+
+#
+# # Reacher
+# # ------------------------------------------
+register(
+    'Reacher-v0',
+    entry_point='environments.dm_control.reacher:ReacherEnv',
+    kwargs={'max_episode_steps': 100, 'image_size': 64, 'action_repeat': 4, 'dense': True},
+    max_episode_steps=100
 )

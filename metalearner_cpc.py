@@ -67,7 +67,7 @@ class MetaLearner:
         self.args.max_trajectory_len *= self.args.max_rollouts_per_task
 
         # get policy input dimensions
-        self.args.state_dim = self.envs.observation_space.shape[0]
+        self.args.state_dim = self.envs.observation_space.shape
         self.args.task_dim = self.envs.task_dim
         self.args.belief_dim = self.envs.belief_dim
         self.args.num_states = self.envs.num_states
@@ -117,6 +117,7 @@ class MetaLearner:
             #
             action_space=self.envs.action_space,
             init_std=self.args.policy_init_std,
+            encoder=self.cpc_encoder.encoder
         ).to(device)
 
         # initialise policy trainer
@@ -149,7 +150,7 @@ class MetaLearner:
                 use_huber_loss=self.args.ppo_use_huberloss,
                 use_clipped_value_loss=self.args.ppo_use_clipped_value_loss,
                 clip_param=self.args.ppo_clip_param,
-                optimiser_vae=self.cpc_encoder.cpc_optimizer,
+                optimiser_vae=self.cpc_encoder.cpc_optimizer
             )
         else:
             raise NotImplementedError
@@ -355,6 +356,8 @@ class MetaLearner:
                                          ret_rms=ret_rms,
                                          encoder=self.cpc_encoder.encoder,
                                          tasks=self.train_tasks,
+                                         reward_decoder=self.cpc_encoder.reward_predictor if hasattr(self.cpc_encoder, 'reward_predictor') else None,
+                                         logger=self.logger
                                          )
 
         # --- evaluate policy ----
@@ -423,7 +426,8 @@ class MetaLearner:
             self.logger.add('policy_losses/dist_entropy', train_stats[2], self.iter_idx)
             self.logger.add('policy_losses/sum', train_stats[3], self.iter_idx)
 
-            self.logger.add('policy/action', run_stats[0][0].float().mean(), self.iter_idx)
+            self.logger.add('policy/action', run_stats[0].abs().float().mean(), self.iter_idx)
+            self.logger.add_hist('policy/action_hist', run_stats[0].abs().flatten(), self.iter_idx)
             if hasattr(self.policy.actor_critic, 'logstd'):
                 self.logger.add('policy/action_logstd', self.policy.actor_critic.dist.logstd.mean(), self.iter_idx)
             self.logger.add('policy/action_logprob', run_stats[1].mean(), self.iter_idx)

@@ -97,7 +97,7 @@ def get_args(rest_args):
     parser.add_argument('--num_vae_updates', type=int, default=30,
                         help='how many VAE update steps to take per meta-iteration')
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
-
+    parser.add_argument('--lookahead_factor', type=int, default=1, help='lookahead for CPC')
 
     # - encoder
     parser.add_argument('--action_embedding_size', type=int, default=0)

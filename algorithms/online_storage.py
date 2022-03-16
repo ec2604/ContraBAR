@@ -299,7 +299,7 @@ class CPCOnlineStorage(object):
 
         # inputs to the policy
         # this will include s_0 when state was reset (hence num_steps+1)
-        self.prev_state = torch.zeros(num_steps + 1, num_processes, state_dim)
+        self.prev_state = torch.zeros(num_steps + 1, num_processes, *state_dim)
         if self.args.pass_latent_to_policy:
             # latent variables CPC
             self.latent_dim = latent_dim
@@ -308,7 +308,7 @@ class CPCOnlineStorage(object):
             self.hidden_states = torch.zeros(num_steps + 1, num_processes, hidden_size)
             # next_state will include s_N when state was reset, skipping s_0
             # (only used if we need to re-compute embeddings after backpropagating RL loss through encoder)
-            self.next_state = torch.zeros(num_steps, num_processes, state_dim)
+            self.next_state = torch.zeros(num_steps, num_processes, *state_dim)
         if self.args.pass_belief_to_policy:
             self.beliefs = torch.zeros(num_steps + 1, num_processes, belief_dim)
         else:
@@ -321,7 +321,7 @@ class CPCOnlineStorage(object):
         # rewards and end of episodes
         self.rewards_raw = torch.zeros(num_steps, num_processes, 1)
         self.rewards_normalised = torch.zeros(num_steps, num_processes, 1)
-        self.done = torch.zeros(num_steps + 1, num_processes, 1)
+        self.done = torch.zeros(num_steps + 1, num_processes, 1, )
         self.masks = torch.ones(num_steps + 1, num_processes, 1)
         # masks that indicate whether it's a true terminal state (false) or time limit end state (true)
         self.bad_masks = torch.ones(num_steps + 1, num_processes, 1)
