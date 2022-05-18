@@ -25,6 +25,13 @@ register(
     'AntGoal-v0',
     entry_point='environments.wrappers:mujoco_wrapper',
     kwargs={'entry_point': 'environments.mujoco.ant_goal:AntGoalEnv',
+            'max_episode_steps': 50},
+    max_episode_steps=50
+)
+register(
+    'AntGoalImage-v0',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.ant_goal_image:AntGoalEnvImage',
             'max_episode_steps': 200},
     max_episode_steps=200
 )
@@ -41,8 +48,22 @@ register(
     'HalfCheetahVel-v0',
     entry_point='environments.wrappers:mujoco_wrapper',
     kwargs={'entry_point': 'environments.mujoco.half_cheetah_vel:HalfCheetahVelEnv',
-            'max_episode_steps': 200},
-    max_episode_steps=200
+            'max_episode_steps': 50},
+    max_episode_steps=50
+)
+register(
+    'HalfCheetahVelWind-v0',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.half_cheetah_vel:HalfCheetahVelWindEnv',
+            'max_episode_steps': 50},
+    max_episode_steps=50
+)
+register(
+    'HalfCheetahVelImage-v0',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.half_cheetah_vel_image:HalfCheetahVelEnvImage',
+            'max_episode_steps': 50},
+    max_episode_steps=50
 )
 
 register(
@@ -141,5 +162,22 @@ register(
     'Reacher-v0',
     entry_point='environments.dm_control.reacher:ReacherEnv',
     kwargs={'max_episode_steps': 100, 'image_size': 64, 'action_repeat': 4, 'dense': True},
+    max_episode_steps=100
+)
+
+register(
+    'SparseReacher-v0',
+    entry_point='environments.dm_control.reacher:ReacherEnv',
+    kwargs={'max_episode_steps': 100, 'image_size': 64, 'action_repeat': 4, 'dense': False},
+    max_episode_steps=100
+)
+#
+# # Procgen
+# # ------------------------------------------
+register(
+    'Maze-v0',
+    entry_point='environments.procgen.maze:MazeEnv',
+    kwargs={'use_backgrounds': False, 'distribution_mode': 'memory',
+                            'render_mode': 'rgb_array', 'num_levels': 1},
     max_episode_steps=100
 )

@@ -61,3 +61,6 @@ class TBLogger:
 
     def add_figure(self, name, value, x_pos):
         self.writer.add_figure(name, value, x_pos)
+
+    def add_video(self, name, value, x_pos):
+        self.writer.add_video(name, value, x_pos)

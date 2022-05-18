@@ -300,15 +300,14 @@ class CPCOnlineStorage(object):
         # inputs to the policy
         # this will include s_0 when state was reset (hence num_steps+1)
         self.prev_state = torch.zeros(num_steps + 1, num_processes, *state_dim)
-        if self.args.pass_latent_to_policy:
-            # latent variables CPC
-            self.latent_dim = latent_dim
-            # hidden states of RNN (necessary if we want to re-compute embeddings)
-            self.hidden_size = hidden_size
-            self.hidden_states = torch.zeros(num_steps + 1, num_processes, hidden_size)
-            # next_state will include s_N when state was reset, skipping s_0
-            # (only used if we need to re-compute embeddings after backpropagating RL loss through encoder)
-            self.next_state = torch.zeros(num_steps, num_processes, *state_dim)
+        # latent variables CPC
+        self.latent_dim = latent_dim
+        # hidden states of RNN (necessary if we want to re-compute embeddings)
+        self.hidden_size = hidden_size
+        self.hidden_states = torch.zeros(num_steps + 1, num_processes, hidden_size)
+        # next_state will include s_N when state was reset, skipping s_0
+        # (only used if we need to re-compute embeddings after backpropagating RL loss through encoder)
+        self.next_state = torch.zeros(num_steps, num_processes, *state_dim)
         if self.args.pass_belief_to_policy:
             self.beliefs = torch.zeros(num_steps + 1, num_processes, belief_dim)
         else:

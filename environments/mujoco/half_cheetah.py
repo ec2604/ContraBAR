@@ -11,7 +11,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class HalfCheetahEnv(HalfCheetahEnv_):
     def _get_obs(self):
         return np.concatenate([
-            self.sim.data.qpos.flat[1:],
+            self.sim.data.qpos.flat,
             self.sim.data.qvel.flat,
             self.get_body_com("torso").flat,
         ]).astype(np.float32).flatten()
@@ -24,13 +24,12 @@ class HalfCheetahEnv(HalfCheetahEnv_):
         # Hide the overlay
         self.viewer._hide_overlay = True
 
-    def render(self, mode='human'):
+    def render(self, mode='human', width=500, height=500):
         if mode == 'rgb_array':
-            self._get_viewer().render()
+            self._get_viewer(mode).render(width, height)
             # window size used for old mujoco-py:
-            width, height = 500, 500
-            data = self._get_viewer().read_pixels(width, height, depth=False)
-            return data
+            data = self._get_viewer(mode).read_pixels(width, height, depth=False)
+            return data[::-1]
         elif mode == 'human':
             self._get_viewer().render()
 

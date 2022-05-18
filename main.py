@@ -17,13 +17,15 @@ from config.pointrobot import \
 from config.mujoco import \
     args_cheetah_dir_multitask, args_cheetah_dir_expert, args_cheetah_dir_rl2, args_cheetah_dir_varibad, \
     args_cheetah_vel_multitask, args_cheetah_vel_expert, args_cheetah_vel_rl2, args_cheetah_vel_varibad, \
-    args_cheetah_vel_avg, \
+    args_cheetah_vel_avg, args_cheetah_vel_image_varibad, \
     args_ant_dir_multitask, args_ant_dir_expert, args_ant_dir_rl2, args_ant_dir_varibad, \
     args_ant_goal_multitask, args_ant_goal_expert, args_ant_goal_rl2, args_ant_goal_varibad, \
     args_ant_goal_humplik, \
     args_walker_multitask, args_walker_expert, args_walker_avg, args_walker_rl2, args_walker_varibad, \
-    args_humanoid_dir_varibad, args_humanoid_dir_rl2, args_humanoid_dir_multitask, args_humanoid_dir_expert
-from config.dm_control import args_reacher_varibad
+    args_humanoid_dir_varibad, args_humanoid_dir_rl2, args_humanoid_dir_multitask, args_humanoid_dir_expert, \
+    args_ant_goal_image_varibad
+from config.dm_control import args_reacher_varibad, args_sparse_reacher_varibad
+from config.procgen import args_procgen_maze
 from environments.parallel_envs import make_vec_envs
 from learner import Learner
 from metalearner_cpc import MetaLearner
@@ -81,6 +83,8 @@ def main():
         args = args_cheetah_vel_avg.get_args(rest_args)
     elif env == 'cheetah_vel_varibad':
         args = args_cheetah_vel_varibad.get_args(rest_args)
+    elif env == 'cheetah_vel_image_varibad':
+        args = args_cheetah_vel_image_varibad.get_args(rest_args)
     elif env == 'cheetah_vel_rl2':
         args = args_cheetah_vel_rl2.get_args(rest_args)
     #
@@ -101,6 +105,8 @@ def main():
         args = args_ant_goal_expert.get_args(rest_args)
     elif env == 'ant_goal_varibad':
         args = args_ant_goal_varibad.get_args(rest_args)
+    elif env == 'ant_goal_image_varibad':
+        args = args_ant_goal_image_varibad.get_args(rest_args)
     elif env == 'ant_goal_humplik':
         args = args_ant_goal_humplik.get_args(rest_args)
     elif env == 'ant_goal_rl2':
@@ -131,6 +137,11 @@ def main():
     # - Reacher -
     elif env == 'reacher':
         args = args_reacher_varibad.get_args(rest_args)
+    elif env == 'sparse_reacher':
+        args = args_sparse_reacher_varibad.get_args(rest_args)
+    # - Procgen -
+    elif env == 'procgen_maze':
+        args = args_procgen_maze.get_args(rest_args)
     else:
         raise Exception("Invalid Environment")
 

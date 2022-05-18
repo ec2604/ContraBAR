@@ -201,7 +201,7 @@ class MetaLearner:
                     )
 
                 # take step in the environment
-                [next_state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action, self.args)
+                [next_state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, 0*action, self.args)
 
                 done = torch.from_numpy(np.array(done, dtype=int)).to(device).float().view((-1, 1))
                 # create mask for episode ends

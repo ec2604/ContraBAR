@@ -61,7 +61,7 @@ class PointEnv(Env):
             low=0,
             high=1,
             #shape=((shp[0] * self.num_frames,) + shp[1:]),
-            shape=(3, 64, 64),
+            shape=(1, 64, 64),
             dtype=np.uint8
         )
         # we convert the actions from [-1, 1] to [-0.1, 0.1] in the step() function
@@ -96,30 +96,41 @@ class PointEnv(Env):
 
     def get_state(self):
         return self._state
+
+    # def obs_to_image(self, obs):
+    #     fig = plt.figure(figsize=(6.4, 6.4), dpi=10)
+    #     canvas = FigureCanvasAgg(fig)
+    #     # plot half circle and goal position
+    #     angles = np.linspace(0, np.pi, num=100)
+    #     x, y = np.cos(angles), np.sin(angles)
+    #     plt.plot(x, y, '--', color='k')
+    #     # plt.scatter(*tuple(self._goal), marker='x', color='r', s=80)
+    #     # fix visualization
+    #     plt.axis('scaled')
+    #     # ax.set_xlim(-1.25, 1.25)
+    #     plt.xlim(-2, 2)
+    #     # ax.set_ylim(-0.25, 1.25)
+    #     plt.ylim(-1, 2)
+    #     plt.xticks([])
+    #     plt.yticks([])
+    #     plt.axis('off')
+    #     plt.scatter(obs[0], obs[1], marker='.', s=50, c='r')
+    #     fig.tight_layout(pad=0)
+    #     plt.margins(0)
+    #     canvas.draw()
+    #     buf = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
+    #     buf = buf.reshape(canvas.get_width_height()[::-1] + (3,))#[110:-110,75:-75,:]
+    #     plt.close()
+    #     return buf.transpose([-1,0,1])#rgb2gray(buf)
+
     def obs_to_image(self, obs):
-        fig = plt.figure(figsize=(6.4, 6.4), dpi=10)
-        canvas = FigureCanvasAgg(fig)
-        # plot half circle and goal position
-        angles = np.linspace(0, np.pi, num=100)
-        x, y = np.cos(angles), np.sin(angles)
-        plt.plot(x, y, '--', color='k')
-        # fix visualization
-        plt.axis('scaled')
-        # ax.set_xlim(-1.25, 1.25)
-        plt.xlim(-2, 2)
-        # ax.set_ylim(-0.25, 1.25)
-        plt.ylim(-1, 2)
-        plt.xticks([])
-        plt.yticks([])
-        plt.axis('off')
-        plt.scatter(obs[0], obs[1], marker='.', s=50, c='r')
-        fig.tight_layout(pad=0)
-        plt.margins(0)
-        canvas.draw()
-        buf = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
-        buf = buf.reshape(canvas.get_width_height()[::-1] + (3,))#[110:-110,75:-75,:]
-        plt.close()
-        return buf.transpose([-1,0,1])#rgb2gray(buf)
+        mat = np.zeros((1, 64, 64))
+        x = np.round((2 + obs[0])*16).astype(np.int)
+        y = np.round(-1*((obs[1] -2)/3)*64).astype(np.int)
+        if x >= 0 and x <= 63 and y >= 0 and y<= 63:
+            mat[:, y, x] = 1
+        return mat
+
 
     def step(self, action):
 
@@ -260,10 +271,10 @@ class PointEnv(Env):
         color_map = mpl.colors.ListedColormap(sns.color_palette("husl", num_episodes))
 
         observations = np.stack([np.array(episode_prev_pstate[i]) for i in range(num_episodes)])
-        curr_task = env.get_task()
+        curr_task = env.get_task()[0]
 
         # plot goal
-        axis.scatter(*curr_task, marker='x', color='k', s=50)
+        axis.scatter(curr_task[0], curr_task[1], marker='x', color='k', s=50)
         # radius where we get reward
         if hasattr(self, 'goal_radius'):
             circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
@@ -292,34 +303,35 @@ class PointEnv(Env):
         plt.yticks([])
         plt.legend()
         plt.tight_layout()
+        kwargs['logger'].add_figure('belief', figure, iter_idx)
         if image_folder is not None:
             plt.savefig('{}/{}_behaviour.png'.format(image_folder, iter_idx), dpi=300, bbox_inches='tight')
             plt.close()
         else:
             plt.show()
 
-        j = -2#np.random.randint(20,80)
-        angles = np.linspace(0, np.pi, num=100)
-        x, y = np.cos(angles), np.sin(angles)
-        circ_points = torch.from_numpy(np.hstack([x.reshape(-1, 1), y.reshape(-1, 1)])).to(device)
-        fig, ax = plt.subplots(1, num_episodes, figsize=(figsize[0]*3, figsize[1]))
-        for i in range(num_episodes):
-            belief = torch.nn.Softmax()(kwargs['reward_decoder'](episode_hidden_states[i][j]))
-            ax[i].plot(observations[i,:j+1, 0], observations[i,:j+1, 1], '-', color=color, label=0)
-            ax[i].scatter(*observations[i, 0, :2], marker='.', color=color, s=50)
-            plt.gray()
-            ax[i].scatter(x, y, c=belief.detach().cpu().numpy().flatten())
-            ax[i].scatter(*curr_task, marker='x', color='r', s=80)
-            if hasattr(self, 'goal_radius'):
-                circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
-                ax[i].add_artist(circle1)
-            ax[i].set_xlim(xlim)
-            ax[i].set_ylim(ylim)
-            ax[i].set_xticks([])
-            ax[i].set_yticks([])
-
-        #plt.tight_layout()
-        kwargs['logger'].add_figure('belief', fig, iter_idx)
+        # j = -2#np.random.randint(20,80)
+        # angles = np.linspace(0, np.pi, num=100)
+        # x, y = np.cos(angles), np.sin(angles)
+        # circ_points = torch.from_numpy(np.hstack([x.reshape(-1, 1), y.reshape(-1, 1)])).to(device)
+        # fig, ax = plt.subplots(1, num_episodes, figsize=(figsize[0]*3, figsize[1]))
+        # for i in range(num_episodes):
+        #     belief = torch.nn.Softmax()(kwargs['reward_decoder'](episode_hidden_states[i][j]))
+        #     ax[i].plot(observations[i,:j+1, 0], observations[i,:j+1, 1], '-', color=color, label=0)
+        #     ax[i].scatter(*observations[i, 0, :2], marker='.', color=color, s=50)
+        #     plt.gray()
+        #     ax[i].scatter(x, y, c=belief.detach().cpu().numpy().flatten())
+        #     ax[i].scatter(*curr_task, marker='x', color='r', s=80)
+        #     if hasattr(self, 'goal_radius'):
+        #         circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
+        #         ax[i].add_artist(circle1)
+        #     ax[i].set_xlim(xlim)
+        #     ax[i].set_ylim(ylim)
+        #     ax[i].set_xticks([])
+        #     ax[i].set_yticks([])
+        #
+        # #plt.tight_layout()
+        # kwargs['logger'].add_figure('belief', fig, iter_idx)
 
         plt_rew = [episode_rewards[i][:episode_lengths[i]] for i in range(len(episode_rewards))]
         plt.plot(torch.cat(plt_rew).view(-1).cpu().numpy())

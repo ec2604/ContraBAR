@@ -12,14 +12,21 @@ class MLP(nn.Module):
     def __init__(self, latent_dim):
         super(MLP, self).__init__()
         # Check input size
-        self.hidden1 = nn.Linear(latent_dim, latent_dim // 2)
-        self.relu1 = nn.ReLU()
-        self.hidden2 = nn.Linear(latent_dim // 2, 1)
-
+        self.hidden1 = nn.Linear(latent_dim, 5)
+        self.activation= nn.ReLU()
+        self.hidden2 = nn.Linear(5, 1)
     def forward(self, x):
-        out = self.relu1(self.hidden1(x))
+        out = self.activation(self.hidden1(x))
         out = self.hidden2(out)
         return out
+
+class CPCMatrix(nn.Module):
+    def __init__(self, context_dim, z_dim):
+        super(CPCMatrix, self).__init__()
+        self.mat = nn.Linear(context_dim, z_dim)
+
+    def forward(self, context, z):
+        return torch.matmul(self.mat(context).unsqueeze(-2), z.unsqueeze(-1))
 
 class actionGRU(nn.Module):
     def __init__(self, input_dim, hidden_dim):
@@ -37,7 +44,7 @@ class statePredictor(nn.Module):
         # Check input size
         self.hidden1 = nn.Linear(input_dim, input_dim // 2)
         self.relu1 = nn.ReLU()
-        self.hidden2 = nn.Linear(input_dim // 2, 100)
+        self.hidden2 = nn.Linear(input_dim // 2, state_dim)
     def forward(self, x):
         out = self.relu1(self.hidden1(x))
         out = self.hidden2(out)

@@ -37,6 +37,7 @@ class RolloutStorageVAE(object):
 
         # storage for each running process (stored on GPU)
         self.num_processes = num_processes
+        self.num_sampled = torch.zeros(self.max_buffer_size)
         self.curr_timestep = torch.zeros((num_processes)).long()  # count environment steps so we know where to insert
         self.running_prev_state = torch.zeros((self.max_traj_len, num_processes, *state_dim)).to(device)  # for each episode will have obs 0...N-1
         self.running_next_state = torch.zeros((self.max_traj_len, num_processes, *state_dim)).to(device)  # for each episode will have obs 1...N
@@ -95,9 +96,11 @@ class RolloutStorageVAE(object):
                         insert_shape = self.tasks[self.insert_idx:self.insert_idx+self.num_processes].shape
                         self.tasks[self.insert_idx:self.insert_idx+self.num_processes] = self.running_tasks.reshape(insert_shape)
                     self.trajectory_lens[self.insert_idx:self.insert_idx+self.num_processes] = self.curr_timestep.clone()
+                    self.num_sampled[self.insert_idx:self.insert_idx+self.num_processes] = 0
                     self.insert_idx += self.num_processes
 
             # empty running buffer
+
             self.running_prev_state *= 0
             self.running_next_state *= 0
             self.running_rewards *= 0
@@ -163,6 +166,9 @@ class RolloutStorageVAE(object):
     def __len__(self):
         return self.buffer_len
 
+    def get_num_sampled(self):
+        return self.num_sampled.sum() / self.buffer_len
+
     def get_batch(self, batchsize=5, replace=False):
         # TODO: check if we can get rid of num_enc_len and num_rollouts (call it batchsize instead)
 
@@ -170,6 +176,7 @@ class RolloutStorageVAE(object):
 
         # select the indices for the processes from which we pick
         rollout_indices = np.random.choice(range(self.buffer_len), batchsize, replace=replace)
+        self.num_sampled[rollout_indices] += 1
         # trajectory length of the individual rollouts we picked
         trajectory_lens = np.array(self.trajectory_lens)[rollout_indices]
 
@@ -184,4 +191,4 @@ class RolloutStorageVAE(object):
             tasks = None
 
         return prev_obs.to(device), next_obs.to(device), actions.to(device), \
-               rewards.to(device), tasks, trajectory_lens
+               rewards.to(device), tasks, trajectory_lens, self.get_num_sampled()

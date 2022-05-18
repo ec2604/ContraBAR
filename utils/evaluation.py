@@ -14,7 +14,9 @@ def evaluate(args,
              iter_idx,
              tasks,
              encoder=None,
-             num_episodes=None
+             num_episodes=None,
+             cpc_evaluation_loss=None,
+             **kwargs
              ):
     env_name = args.env_name
     if hasattr(args, 'test_env_name'):
@@ -31,6 +33,9 @@ def evaluate(args,
     #  all processes have at least [num_episodes] many episodes)
     returns_per_episode = torch.zeros((num_processes, num_episodes + 1)).to(device)
 
+    episode_returns = []
+    episode_lengths = []
+
     # --- initialise environments and latents ---
 
     envs = make_vec_envs(env_name,
@@ -44,12 +49,17 @@ def evaluate(args,
                          ret_rms=ret_rms,
                          tasks=tasks,
                          add_done_info=args.max_rollouts_per_task > 1,
+                         dummy=True
                          )
     num_steps = envs._max_episode_steps
-
+    prev_state_per_episode = torch.zeros((num_episodes, num_steps, num_processes, *args.state_dim)).to(device)
+    next_state_per_episode = torch.zeros((num_episodes, num_steps, num_processes, *args.state_dim)).to(device)
+    actions_per_episode = torch.zeros((num_episodes, num_steps, num_processes, args.action_dim)).to(device)
+    rewards_per_episode = torch.zeros((num_episodes, num_steps, num_processes, 1)).to(device)
+    tasks = torch.zeros((num_processes, args.task_dim)).to(device)
     # reset environments
     state, belief, task = utl.reset_env(envs, args)
-
+    tasks = task.clone()
     # this counts how often an agent has done the same task already
     task_count = torch.zeros(num_processes).long().to(device)
 
@@ -62,15 +72,16 @@ def evaluate(args,
     for episode_idx in range(num_episodes):
 
         for step_idx in range(num_steps):
-
+            prev_state_per_episode[episode_idx, step_idx, :, ...] = state.clone()
             with torch.no_grad():
                 _, action = utl.select_action_cpc(args=args,
-                                              policy=policy,
-                                              hidden_latent=hidden_state.squeeze(0),
-                                              state=state,
-                                              belief=belief,
-                                              task=task,
-                                              deterministic=True)
+                                                  policy=policy,
+                                                  hidden_latent=hidden_state.squeeze(0),
+                                                  state=state,
+                                                  belief=belief,
+                                                  task=task,
+                                                  deterministic=True)
+                action = action
 
             # observe reward and next obs
             [state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(envs, action, args)
@@ -79,12 +90,15 @@ def evaluate(args,
             if encoder is not None:
                 # update the hidden state
                 hidden_state = utl.update_encoding_cpc(encoder=encoder,
-                                                                                              next_obs=state,
-                                                                                              action=action,
-                                                                                              reward=rew_raw,
-                                                                                              done=None,
-                                                                                              hidden_state=hidden_state)
+                                                       next_obs=state,
+                                                       action=action,
+                                                       reward=rew_raw,
+                                                       done=None,
+                                                       hidden_state=hidden_state)
 
+            next_state_per_episode[episode_idx, step_idx, :, ...] = state.clone()
+            rewards_per_episode[episode_idx, step_idx, :, ...] = rew_raw.clone()
+            actions_per_episode[episode_idx, step_idx, :, ...] = action.clone()
             # add rewards
             returns_per_episode[range(num_processes), task_count] += rew_raw.view(-1)
 
@@ -96,7 +110,18 @@ def evaluate(args,
                 state, belief, task = utl.reset_env(envs, args, indices=done_indices, state=state)
 
     envs.close()
+    prev_state_per_episode = prev_state_per_episode.reshape(num_episodes * num_steps, num_processes, *args.state_dim)
+    next_state_per_episode = next_state_per_episode.reshape(num_episodes * num_steps, num_processes, *args.state_dim)
+    actions_per_episode = actions_per_episode.reshape(num_episodes * num_steps, num_processes, args.action_dim)
+    rewards_per_episode = rewards_per_episode.reshape(num_episodes * num_steps, num_processes, 1)
 
+    # vae_prev_obs, vae_next_obs, vae_actions, vae_rewards, vae_tasks, \
+    # trajectory_lens, num_samples = kwargs['rollout_storage'].get_batch(batchsize=16)
+    loss = cpc_evaluation_loss(update=False, pretrain_index=None, log=True, from_storage=False, batch=
+    (prev_state_per_episode, next_state_per_episode, actions_per_episode, rewards_per_episode, tasks, \
+     num_steps * num_episodes), log_prefix='eval')
+    # loss = cpc_evaluation_loss(update=False, pretrain_index=None, log=True, from_storage=False, batch=(vae_prev_obs, vae_next_obs, vae_actions, vae_rewards, vae_tasks, \
+    # trajectory_lens), log_prefix='eval')
     return returns_per_episode[:, :num_episodes]
 
 
@@ -145,23 +170,23 @@ def visualise_behaviour(args,
     hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, episode_returns = traj
 
     # if hidden_states is not None:
-        # plot_latents(latent_means, latent_logvars,
-        #              image_folder=image_folder,
-        #              iter_idx=iter_idx
-        #              )
+    # plot_latents(latent_means, latent_logvars,
+    #              image_folder=image_folder,
+    #              iter_idx=iter_idx
+    #              )
 
-        # if not (args.disable_decoder and args.disable_kl_term):
-        #     pass
-            # plot_vae_loss(args,
-            #               hidden_states,
-            #               episode_prev_obs,
-            #               episode_next_obs,
-            #               episode_actions,
-            #               episode_rewards,
-            #               episode_task,
-            #               image_folder=image_folder,
-            #               iter_idx=iter_idx
-            #               )
+    # if not (args.disable_decoder and args.disable_kl_term):
+    #     pass
+    # plot_vae_loss(args,
+    #               hidden_states,
+    #               episode_prev_obs,
+    #               episode_next_obs,
+    #               episode_actions,
+    #               episode_rewards,
+    #               episode_task,
+    #               image_folder=image_folder,
+    #               iter_idx=iter_idx
+    #               )
 
     env.close()
 
@@ -179,20 +204,14 @@ def get_test_rollout(args, env, policy, encoder=None):
     episode_returns = []
     episode_lengths = []
 
-    if encoder is not None:
-        episode_latent_samples = [[] for _ in range(num_episodes)]
-        episode_latent_means = [[] for _ in range(num_episodes)]
-        episode_latent_logvars = [[] for _ in range(num_episodes)]
-    else:
-        curr_latent_sample = curr_latent_mean = curr_latent_logvar = None
-        episode_latent_means = episode_latent_logvars = None
+    episode_hidden_states = [[] for _ in range(num_episodes)]
 
     # --- roll out policy ---
 
     # (re)set environment
     env.reset_task()
     state, belief, task = utl.reset_env(env, args)
-    state = state.reshape((1, -1)).to(device)
+    state = state.to(device)
     task = task.view(-1) if task is not None else None
 
     for episode_idx in range(num_episodes):
@@ -202,23 +221,14 @@ def get_test_rollout(args, env, policy, encoder=None):
         if encoder is not None:
             if episode_idx == 0:
                 # reset to prior
-                curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder.prior(1)
-                curr_latent_sample = curr_latent_sample[0].to(device)
-                curr_latent_mean = curr_latent_mean[0].to(device)
-                curr_latent_logvar = curr_latent_logvar[0].to(device)
-            episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-            episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-            episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                curr_hidden_state = encoder.prior(1)
 
+            episode_hidden_states[episode_idx].append(curr_hidden_state[0].clone())
         for step_idx in range(1, env._max_episode_steps + 1):
 
             episode_prev_obs[episode_idx].append(state.clone())
 
-            latent = utl.get_latent_for_policy(args,
-                                               latent_sample=curr_latent_sample,
-                                               latent_mean=curr_latent_mean,
-                                               latent_logvar=curr_latent_logvar)
-            _, action = policy.act(state=state.view(-1), latent=latent, belief=belief, task=task, deterministic=True)
+            _, action = policy.act(state=state, latent=curr_hidden_state, belief=belief, task=task, deterministic=True)
             action = action.reshape((1, *action.shape))
 
             # observe reward and next obs
@@ -228,16 +238,14 @@ def get_test_rollout(args, env, policy, encoder=None):
 
             if encoder is not None:
                 # update task embedding
-                curr_latent_sample, curr_latent_mean, curr_latent_logvar, hidden_state = encoder(
+                curr_hidden_state = encoder(
                     action.float().to(device),
                     state,
                     rew_raw.reshape((1, 1)).float().to(device),
-                    hidden_state,
+                    curr_hidden_state,
                     return_prior=False)
 
-                episode_latent_samples[episode_idx].append(curr_latent_sample[0].clone())
-                episode_latent_means[episode_idx].append(curr_latent_mean[0].clone())
-                episode_latent_logvars[episode_idx].append(curr_latent_logvar[0].clone())
+                episode_hidden_states[episode_idx].append(curr_hidden_state[0].clone())
 
             episode_next_obs[episode_idx].append(state.clone())
             episode_rewards[episode_idx].append(rew_raw.clone())
@@ -251,16 +259,14 @@ def get_test_rollout(args, env, policy, encoder=None):
 
     # clean up
     if encoder is not None:
-        episode_latent_means = [torch.stack(e) for e in episode_latent_means]
-        episode_latent_logvars = [torch.stack(e) for e in episode_latent_logvars]
+        episode_hidden_states = [torch.stack(e) for e in episode_hidden_states]
 
     episode_prev_obs = [torch.cat(e) for e in episode_prev_obs]
     episode_next_obs = [torch.cat(e) for e in episode_next_obs]
     episode_actions = [torch.cat(e) for e in episode_actions]
     episode_rewards = [torch.cat(r) for r in episode_rewards]
 
-    return episode_latent_means, episode_latent_logvars, \
-           episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
+    return episode_hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
            episode_returns
 
 

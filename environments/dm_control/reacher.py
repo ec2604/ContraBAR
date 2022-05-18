@@ -44,10 +44,10 @@ class ReacherEnv(gym.Env):
         self.max_episode_steps = max_episode_steps
         self.action_space = self.env.action_space
         self.task_object = self.env.unwrapped._env.task
-        self.goal_radius = 0.005
+        self.goal_radius = 0.05
         self.task_dim = 2
         self.task_object._target_size = self.goal_radius
-        self.goals = [np.array([np.random.uniform(np.pi / 2, np.pi), 0.13]) for _ in range(n_tasks)]
+        self.goals = [np.array([np.random.uniform(np.pi / 2, np.pi), 0.2]) for _ in range(n_tasks)]
         #np.random.uniform(.1, .13)
         #self.goals = [np.array([np.random.uniform(0, np.pi / 2), np.random.uniform(.1, .13)]) for _ in range(n_tasks)]
         #self.goals = [np.array([2.226, 0.122])]
@@ -81,7 +81,7 @@ class ReacherEnv(gym.Env):
         Reset the task, either at random (if idx=None) or the given task.
         """
         if idx is None:
-            self._goal = np.array([random.random()*(np.pi/2) + np.pi / 2, 0.13])#self.goals[int(np.random.randint(0,len(self.goals),1))]
+            self._goal = np.array([random.random()*(np.pi/2) + np.pi / 2, 0.2])#self.goals[int(np.random.randint(0,len(self.goals),1))]
             self.set_goal(self._goal)
         else:
             self._goal = self.goals[idx]
@@ -162,7 +162,7 @@ class ReacherEnv(gym.Env):
                             radius=0.01+self.goal_radius if hasattr(self, 'goal_radius') else 0.1,
                             alpha=0.3)
         circle_general = plt.Circle((0, 0),
-                            radius=0.13,
+                            radius=0.2,
                             alpha=0.3)
         ax.add_artist(circle)
         ax.add_artist(circle_general)
@@ -241,10 +241,10 @@ class ReacherEnv(gym.Env):
 
                 if step_idx == 1:
                     episode_prev_obs[episode_idx].append(start_obs.clone())
-                    episode_prev_state[episode_idx].append(start_state)
+                    episode_prev_state[episode_idx].append(start_state.copy())
                 else:
                     episode_prev_obs[episode_idx].append(obs.clone())
-                    episode_prev_state[episode_idx].append(state)
+                    episode_prev_state[episode_idx].append(state.copy())
                 # act
                 _, action = utl.select_action_cpc(args=args,
                                                  policy=policy,
@@ -255,7 +255,7 @@ class ReacherEnv(gym.Env):
                                                  hidden_latent=current_hidden_state.squeeze(0)
                                                  )
                 (obs, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
-                state = env.venv.envs[0].get_state().copy()
+                state = env.venv.envs[0].get_state()
                 #obs = obs.reshape((1, -1)).float().to(device)
 
 
@@ -268,7 +268,7 @@ class ReacherEnv(gym.Env):
                     episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
                 episode_next_obs[episode_idx].append(obs.clone())
-                episode_next_state[episode_idx].append(state)
+                episode_next_state[episode_idx].append(state.copy())
                 episode_rewards[episode_idx].append(rew.clone())
                 episode_actions[episode_idx].append(action.reshape(1, -1).clone())
 
@@ -287,30 +287,36 @@ class ReacherEnv(gym.Env):
         episode_next_obs = [torch.cat(e) for e in episode_next_obs]
         episode_actions = [torch.cat(e) for e in episode_actions]
         episode_rewards = [torch.cat(e) for e in episode_rewards]
-
+        kwargs['logger'].add_video('behaviour_video', episode_prev_obs[0][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
         # plot the movement of the reacher
-        ax = plt.gca()
+        figure = plt.figure()
         # fix visualization
         plt.axis('scaled')
-        ax.set_xlim(-0.32, 0.32)
+        plt.xlim([-0.32, 0.32])
         # ax.set_ylim(-0.25, 1.25)
-        ax.set_ylim(-0.32, 0.32)
-        ax.axhline(y=0, c='grey', ls='--')
-        ax.axvline(x=0, c='grey', ls='--')
+        plt.ylim([-0.32, 0.32])
+        plt.axhline(y=0, c='grey', ls='--')
+        plt.axvline(x=0, c='grey', ls='--')
         plt.xticks([])
         plt.yticks([])
-        goal_x = unwrapped_env._goal[1] * np.sin(unwrapped_env._goal[0])
-        goal_y = unwrapped_env._goal[1] * np.cos(unwrapped_env._goal[0])
-        circle = plt.Circle((goal_x, goal_y),
+        #for some reason goals are flipped
+        goal_y = unwrapped_env._goal[1] * np.sin(unwrapped_env._goal[0])
+        goal_x = unwrapped_env._goal[1] * np.cos(unwrapped_env._goal[0])
+        circle = plt.Circle((goal_y, goal_x),
                             radius=0.01 + unwrapped_env.goal_radius if hasattr(unwrapped_env, 'goal_radius') else 0.1,
                             alpha=0.3)
-        circle_general = plt.Circle((0, 0),
-                                    radius=0.13,
-                                    alpha=0.3)
-        ax.add_artist(circle)
-        ax.add_artist(circle_general)
-        ax.plot(episode_next_state[0][1:, 0], episode_next_state[0][1:, 1])
-        ax.scatter(episode_prev_state[0][0,0], episode_prev_state[0][0, 1], color='r',marker='o')
+        angle = np.linspace(np.pi / 2, np.pi, 100)
+        goal_range = 0.2 * np.array((np.cos(angle), np.sin(angle)))
+        plt.plot(goal_range[1], goal_range[0], 'k--', alpha=0.1)
+        plt.gca().add_artist(circle)
+        plt.plot(episode_prev_state[0][:, 0], episode_prev_state[0][:, 1])
+        plt.scatter(episode_prev_state[0][0,0], episode_prev_state[0][0, 1], color='r',marker='o')
+        plt.quiver(episode_prev_state[0][:-1, 0], episode_prev_state[0][:-1, 1],
+                   episode_prev_state[0][1:, 0] - episode_prev_state[0][:-1, 0],
+                   episode_prev_state[0][1:, 1] - episode_prev_state[0][:-1, 1], scale_units='xy', angles='xy', scale=2,
+                   color='red')
+        plt.title(f'Reward: {episode_rewards[0].sum()}, max reward: {episode_rewards[0].max()}')
+        kwargs['logger'].add_figure('belief', figure, iter_idx)
         if image_folder is not None:
             plt.savefig('{}/{}_behaviour'.format(image_folder, iter_idx))
             plt.close()

@@ -6,23 +6,28 @@ from environments.mujoco.ant import AntEnv
 
 
 class AntGoalEnv(AntEnv):
-    def __init__(self, max_episode_steps=200):
+    def __init__(self, max_episode_steps=50):
         self.set_task(self.sample_tasks(1)[0])
         self._max_episode_steps = max_episode_steps
         self.task_dim = 2
+        #self.wind = np.array([random.random() * 0.01 - 0.005,random.random() * 0.01 - 0.005])
         super(AntGoalEnv, self).__init__()
 
     def step(self, action):
         self.do_simulation(action, self.frame_skip)
+        #qpos = self.sim.data.qpos
+        #qvel = self.sim.data.qvel
+        #qpos[:2] += self.wind
+        #self.set_state(qpos, qvel)
         xposafter = np.array(self.get_body_com("torso"))
-
         goal_reward = -np.sum(np.abs(xposafter[:2] - self.goal_pos))  # make it happy, not suicidal
 
         ctrl_cost = .1 * np.square(action).sum()
         contact_cost = 0.5 * 1e-3 * np.sum(
             np.square(np.clip(self.sim.data.cfrc_ext, -1, 1)))
         survive_reward = 0.0
-        reward = goal_reward - ctrl_cost - contact_cost + survive_reward
+        reward = goal_reward# - ctrl_cost - contact_cost + survive_reward
+        #reward = goal_reward - ctrl_cost
         state = self.state_vector()
         done = False
         ob = self._get_obs()
@@ -35,8 +40,11 @@ class AntGoalEnv(AntEnv):
         )
 
     def sample_tasks(self, num_tasks):
-        a = np.array([random.random() for _ in range(num_tasks)]) * 2 * np.pi
-        r = 3 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
+        a = np.array([random.random() for _ in range(num_tasks)]) * np.pi
+        #r = 1 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
+        #a = np.array([0.75 for _ in range(num_tasks)]) * np.pi
+        r = 1
+        #self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
         return np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
 
     def set_task(self, task):

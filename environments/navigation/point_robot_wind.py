@@ -312,7 +312,9 @@ class PointEnvWind(Env):
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,))
         self._max_episode_steps = max_episode_steps
 
-        self.gaussian_wind = multivariate_normal(mean=np.random.uniform(-0.1, 0.1, 2), cov=0.005*np.eye(2))
+        self.noise_level = 1
+        self.noise_anneal_rate = 0.9
+        self.bonanza_radius = 0.01
 
     def sample_task(self):
         goal = self.goal_sampler()
@@ -335,6 +337,7 @@ class PointEnvWind(Env):
         return self._get_obs()
 
     def reset(self):
+        self.noise_level = 1
         return self.reset_model()
 
     def _get_obs(self):
@@ -345,8 +348,11 @@ class PointEnvWind(Env):
         action = np.clip(action, self.action_space.low, self.action_space.high)
         assert self.action_space.contains(action), action
 
-        self._state = self._state + 0.1 * action + self.gaussian_wind.rvs(1)
-        reward = - np.linalg.norm(self._state - self._goal, ord=2)
+        self._state = self._state + 0.1 * action
+        reward = - np.linalg.norm(self._state - self._goal, ord=2) - np.random.uniform(0, self.noise_level)
+        self.noise_level *= self.noise_anneal_rate
+        if np.linalg.norm(self._state - self._goal, ord=2) < self.bonanza_radius:
+            reward = 200
         done = False
         ob = self._get_obs()
         info = {'task': self.get_task()}
@@ -437,10 +443,9 @@ class PointEnvWind(Env):
                     # update task embedding
                     current_hidden_state = encoder(
                         action.reshape(1, -1).float().to(device), state, rew.reshape(1, -1).float().to(device),
-                        hidden_state, return_prior=False)
+                        current_hidden_state, return_prior=False)
 
                     episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
-
 
                 episode_next_obs[episode_idx].append(state.clone())
                 episode_rewards[episode_idx].append(rew.clone())
@@ -456,7 +461,8 @@ class PointEnvWind(Env):
             episode_lengths.append(step_idx)
 
         # clean up
-
+        if encoder is not None:
+            episode_hidden_states = [torch.stack(e) for e in episode_hidden_states]
         episode_prev_obs = [torch.cat(e) for e in episode_prev_obs]
         episode_next_obs = [torch.cat(e) for e in episode_next_obs]
         episode_actions = [torch.stack(e) for e in episode_actions]
@@ -471,11 +477,11 @@ class PointEnvWind(Env):
             ylim = (-1.3, 1.3)
         color_map = mpl.colors.ListedColormap(sns.color_palette("husl", num_episodes))
 
-        observations = torch.stack([episode_prev_obs[i]for i in range(num_episodes)]).cpu().numpy()
-        curr_task = env.get_task()
+        observations = torch.stack([episode_prev_obs[i] for i in range(num_episodes)]).cpu().numpy()
+        curr_task = env.get_task()[0]
 
         # plot goal
-        axis.scatter(*curr_task, marker='x', color='k', s=50)
+        axis.scatter(curr_task[0], curr_task[1], marker='x', color='k', s=50)
         # radius where we get reward
         if hasattr(self, 'goal_radius'):
             circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
@@ -490,7 +496,7 @@ class PointEnvWind(Env):
             if self.goal_sampler == semi_circle_goal_sampler:
                 angle = np.linspace(0, np.pi, 100)
             else:
-                angle = np.linspace(0, 2*np.pi, 100)
+                angle = np.linspace(0, 2 * np.pi, 100)
             goal_range = r * np.array((np.cos(angle), np.sin(angle)))
             plt.plot(goal_range[0], goal_range[1], 'k--', alpha=0.1)
 
@@ -502,8 +508,16 @@ class PointEnvWind(Env):
         plt.ylim(ylim)
         plt.xticks([])
         plt.yticks([])
+        plt.scatter(kwargs['reward_decoder'](episode_hidden_states[0].view(-1, 50)).detach().cpu().numpy()[:, 0],
+                    kwargs['reward_decoder'](episode_hidden_states[0].view(-1, 50)).detach().cpu().numpy()[:, 1],
+                    c=np.arange(1, 102) / 101, cmap='viridis')
+        cbar = plt.colorbar()
+        cbar.set_ticks(np.arange(1,102)[::30] / 101)
+        cbar.set_ticklabels(np.arange(1, 102)[::30])
         plt.legend()
         plt.tight_layout()
+        kwargs['logger'].add_figure('belief', figure, iter_idx)
+
         if image_folder is not None:
             plt.savefig('{}/{}_behaviour.png'.format(image_folder, iter_idx), dpi=300, bbox_inches='tight')
             plt.close()

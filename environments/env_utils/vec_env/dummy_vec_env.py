@@ -99,7 +99,7 @@ class DummyVecEnv(VecEnv):
             super().render(mode=mode)
 
     def get_task(self):
-        return self.envs[0].unwrapped.get_task()
+        return np.stack([env.get_task() for env in self.envs])
 
     def get_belief(self):
         return self.envs[0].unwrapped.get_belief()

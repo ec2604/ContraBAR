@@ -259,13 +259,16 @@ class FeatureExtractor(nn.Module):
         self.output_size = output_size
         self.activation_function = activation_function
         if self.output_size != 0:
-            self.fc = nn.Linear(input_size, output_size)
+            self.fc_1 = nn.Linear(input_size, 64)
+            self.fc_2 = nn.Linear(64, output_size)
         else:
             self.fc = None
 
     def forward(self, inputs):
         if self.output_size != 0:
-            return self.activation_function(self.fc(inputs))
+            output = self.activation_function(self.fc_1(inputs))
+            output = self.fc_2(output)
+            return output
         else:
             return torch.zeros(0, ).to(device)
 
@@ -379,4 +382,6 @@ def get_pos_grid(pos, device):
     grid.scatter_(dim=1, index=idx, src=torch.full_like(grid, fill_value=1))
     return grid.view(-1, X_SIZE, Y_SIZE)
 
-
+def rgb2gray(rgb):
+    gray = 0.2989*rgb[...,0]+0.587*rgb[...,1]+0.114*rgb[...,2]
+    return np.expand_dims(gray, axis=0)

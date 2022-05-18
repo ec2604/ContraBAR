@@ -1,74 +1,107 @@
+import random
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from random import random
-from environments.mujoco.mujoco_env import MujocoEnv
+
+from collections import deque
+from environments.mujoco.ant import AntEnv
 from utils import helpers as utl
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-def rgb2gray(rgb):
-    gray = 0.2989*rgb[...,0]+0.587*rgb[...,1]+0.114*rgb[...,2]
-    return np.expand_dims(gray, axis=0)
 
-class AntEnv(MujocoEnv):
-    def __init__(self, use_low_gear_ratio=False):
-        self.init_serialization(locals())
-        if use_low_gear_ratio:
-            xml_path = 'low_gear_ratio_ant.xml'
-        else:
-            xml_path = 'ant.xml'
-        super().__init__(
-            xml_path,
-            frame_skip=5,
-            automatically_set_obs_and_action_space=True,
-        )
 
-    def step(self, a):
-        torso_xyz_before = self.get_body_com("torso")
-        self.do_simulation(a, self.frame_skip)
-        torso_xyz_after = self.get_body_com("torso")
-        torso_velocity = torso_xyz_after - torso_xyz_before
-        forward_reward = torso_velocity[0] / self.dt
-        ctrl_cost = 0.  # .5 * np.square(a).sum()
+
+
+class AntGoalEnvImage(AntEnv):
+    def __init__(self, max_episode_steps=200):#, stochastic_moves=True):
+        self.set_task(self.sample_tasks(1))
+        self._max_episode_steps = max_episode_steps
+        self.task_dim = 2
+        self._frames = deque([], maxlen=3)
+        #self.wind = np.array([0, 0])
+        #self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
+        super(AntGoalEnvImage, self).__init__()
+
+    def step(self, action):
+        self.do_simulation(action, self.frame_skip)
+        # qpos = self.sim.data.qpos
+        # qvel = self.sim.data.qvel
+        # qpos[:2] += self.wind
+        # self.set_state(qpos, qvel)
+        xposafter = np.array(self.get_body_com("torso"))
+
+        goal_reward = -np.sum(np.abs(xposafter[:2] - self.goal_pos))  # make it happy, not suicidal
+
+        ctrl_cost = .1 * np.square(action).sum()
         contact_cost = 0.5 * 1e-3 * np.sum(
             np.square(np.clip(self.sim.data.cfrc_ext, -1, 1)))
-        survive_reward = 0.  # 1.0
-        reward = forward_reward - ctrl_cost - contact_cost + survive_reward
+        survive_reward = 0.0
+        # reward = goal_reward - ctrl_cost - contact_cost + survive_reward
+        reward = goal_reward - ctrl_cost
         state = self.state_vector()
-        notdone = np.isfinite(state).all() and state[2] >= 0.2 and state[2] <= 1.0
-        done = not notdone
-        ob = self._get_obs()
+        done = False
+        curr_obs = self._get_obs()
+        self._frames.append(curr_obs)
+        if len(self._frames) != 3:
+            self.reset(again=False)
+        ob = self.get_obs()
         return ob, reward, done, dict(
-            reward_forward=forward_reward,
+            goal_forward=goal_reward,
             reward_ctrl=-ctrl_cost,
             reward_contact=-contact_cost,
             reward_survive=survive_reward,
-            torso_velocity=torso_velocity,
+            task=self.get_task(),
+            state=state
         )
 
-    def _get_obs(self):
-        # this is gym ant obs, should use rllab?
-        # if position is needed, override this in subclasses
-        return np.concatenate([
-            self.sim.data.qpos.flat[2:],
-            self.sim.data.qvel.flat,
-        ])
-
-    def reset_model(self):
-        qpos = self.init_qpos + self.np_random.uniform(size=self.model.nq, low=-.1, high=.1)
-        qvel = self.init_qvel + self.np_random.randn(self.model.nv) * .1
-        self.set_state(qpos, qvel)
-        return self._get_obs()
-
     def viewer_setup(self):
-        self.viewer.cam.distance = self.model.stat.extent * 0.5
+    #     self.viewer.cam.trackbodyid = 0  # id of the body to track ()
+        self.viewer.cam.distance = self.model.stat.extent * 0.5  # how much you "zoom in", model.stat.extent is the max limits of the arena
+    #     self.viewer.cam.lookat[0] += 0.5  # x,y,z offset from the object (works if trackbodyid=-1)
+    #     self.viewer.cam.lookat[1] += 0.5
+    #     self.viewer.cam.lookat[2] += 0.5
+    #     self.viewer.cam.elevation = -90  # camera rotation around the axis in the plane going through the frame origin (if 0 you just see a line)
+    #     self.viewer.cam.azimuth = 90  # camera rotation around the camera's vertical axis
+    def sample_tasks(self, num_tasks):
+        a = np.array([random.random() for _ in range(num_tasks)]) * np.pi
+        # r = 1 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
+        # a = np.array([0.75 for _ in range(num_tasks)]) * np.pi
+        r = 1
+        return np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
+
+    def set_task(self, task):
+        self.goal_pos = task
+
+    def get_task(self):
+        return np.array(self.goal_pos)
+
+    def _get_obs(self):
+        return utl.rgb2gray(self.render('rgb_array', height=84, width=84))
+
+    def get_obs(self):
+        assert len(self._frames) == 3
+        return np.concatenate(list(self._frames), axis=0)
+
+    def reset(self, again=True):
+        """
+        Reset the environment. This should *NOT* reset the task!
+        Resetting the task is handled in the varibad wrapper (see wrappers.py).
+        """
+        if again:
+            super().reset()
+        obs = self._get_obs()
+        for _ in range(3):
+            self._frames.append(obs)
+        return self.get_obs()
 
     def reset_task(self, task):
         if task is None:
             task = self.sample_tasks(1)[0]
         self.set_task(task)
+        self.reset()
 
-    def visualise_behaviour(self, env,
+    @staticmethod
+    def visualise_behaviour(env,
                             args,
                             policy,
                             iter_idx,
@@ -84,7 +117,6 @@ class AntEnv(MujocoEnv):
         # --- initialise things we want to keep track of ---
 
         episode_prev_obs = [[] for _ in range(num_episodes)]
-        # episode_prev_img = [[] for _ in range(num_episodes)]
         episode_next_obs = [[] for _ in range(num_episodes)]
         episode_actions = [[] for _ in range(num_episodes)]
         episode_rewards = [[] for _ in range(num_episodes)]
@@ -103,7 +135,6 @@ class AntEnv(MujocoEnv):
         env.reset_task()
         state, belief, task = utl.reset_env(env, args)
         start_obs_raw = state.clone()
-        start_img = rgb2gray(self.render('rgb_array', height=64, width=64))
         task = task.view(-1) if task is not None else None
 
         # initialise actions and rewards (used as initial input to policy if we have a recurrent policy)
@@ -133,10 +164,8 @@ class AntEnv(MujocoEnv):
 
                 if step_idx == 1:
                     episode_prev_obs[episode_idx].append(start_obs_raw.clone())
-                    # episode_prev_img[episode_idx].append(start_img.copy())
                 else:
                     episode_prev_obs[episode_idx].append(state.clone())
-                    # episode_prev_img[episode_idx].append(curr_img.copy())
                 # act
                 _, action = utl.select_action_cpc(args=args,
                                                  policy=policy,
@@ -149,8 +178,7 @@ class AntEnv(MujocoEnv):
 
 
                 (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
-                # curr_img = rgb2gray(self.render('rgb_array', height=64, width=64))
-                state = state.float().reshape((1, -1)).to(device)
+                state = state.float().to(device)
                 task = task.view(-1) if task is not None else None
 
                 # keep track of position
@@ -170,7 +198,7 @@ class AntEnv(MujocoEnv):
 
                 if info[0]['done_mdp'] and not done:
                     start_obs_raw = info[0]['start_state']
-                    start_obs_raw = torch.from_numpy(start_obs_raw).float().reshape((1, -1)).to(device)
+                    start_obs_raw = torch.from_numpy(start_obs_raw).float().to(device).unsqueeze(0)
                     start_pos = unwrapped_env.get_body_com("torso")[:2].copy()
                     break
 
@@ -183,8 +211,10 @@ class AntEnv(MujocoEnv):
         episode_next_obs = [torch.cat(e) for e in episode_next_obs]
         episode_actions = [torch.stack(e) for e in episode_actions]
         episode_rewards = [torch.cat(e) for e in episode_rewards]
-        # kwargs['logger'].add_video('behaviour_video_rollout_1',
-        #                            episode_prev_img[0].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
+        kwargs['logger'].add_video('behaviour_video_rollout_1',
+                                   episode_prev_obs[0][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
+        kwargs['logger'].add_video('behaviour_video_rollout_2',
+                                   episode_prev_obs[1   ][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
         # plot the movement of the ant
         # print(pos)
         figure = plt.figure(figsize=(5, 4 * num_episodes))
@@ -202,7 +232,7 @@ class AntEnv(MujocoEnv):
             plt.scatter(x, y, 1, 'g')
 
             curr_task = env.get_task()[0]
-            plt.title(f'task: {curr_task}, Cumulative reward: {episode_rewards[i].sum():.2f}')
+            plt.title('task: {}'.format(curr_task), fontsize=15)
             if 'Goal' in args.env_name:
                 plt.plot(curr_task[0], curr_task[1], 'rx')
 
@@ -216,12 +246,11 @@ class AntEnv(MujocoEnv):
 
         plt.tight_layout()
         kwargs['logger'].add_figure('belief', figure, iter_idx)
-        plt.close()
-        # if image_folder is not None:
-        #     plt.savefig('{}/{}_behaviour'.format(image_folder, iter_idx))
-        #     plt.close()
-        # else:
-        #     plt.show()
+        if image_folder is not None:
+            plt.savefig('{}/{}_behaviour'.format(image_folder, iter_idx))
+            plt.close()
+        else:
+            plt.show()
 
         if not return_pos:
             return episode_hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \

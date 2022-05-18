@@ -32,7 +32,7 @@ def make_vec_envs(env_name, seed, num_processes, gamma,
                   device, episodes_per_task,
                   normalise_rew, ret_rms, tasks,
                   rank_offset=0,
-                  add_done_info=None,
+                  add_done_info=None,dummy=False,
                   **kwargs):
     """
     :param ret_rms: running return and std for rewards
@@ -43,8 +43,7 @@ def make_vec_envs(env_name, seed, num_processes, gamma,
                      add_done_info=add_done_info,
                      **kwargs)
             for i in range(num_processes)]
-
-    if len(envs) > 1:
+    if len(envs) > 1 and dummy == False:
         envs = SubprocVecEnv(envs)
     else:
         envs = DummyVecEnv(envs)

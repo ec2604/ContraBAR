@@ -14,7 +14,8 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def semi_circle_goal_sampler():
     r = 1.0
-    angle = random.uniform(0, np.pi)
+    #angle = random.uniform(0, np.pi)
+    angle = 0.75*np.pi
     goal = r * np.array((np.cos(angle), np.sin(angle)))
     return goal
 
@@ -57,6 +58,8 @@ class PointEnv(Env):
         # we convert the actions from [-1, 1] to [-0.1, 0.1] in the step() function
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,))
         self._max_episode_steps = max_episode_steps
+        self.wind = np.array([random.random() * 0.2 - 0.1,random.random() * 0.2 - 0.1])
+
 
     def sample_task(self):
         goal = self.goal_sampler()
@@ -71,6 +74,7 @@ class PointEnv(Env):
     def reset_task(self, task=None):
         if task is None:
             task = self.sample_task()
+            self.wind = np.array([random.random() * 0.1 - 0.05, random.random() * 0.1 - 0.05])
         self.set_task(task)
         return task
 
@@ -90,6 +94,7 @@ class PointEnv(Env):
         assert self.action_space.contains(action), action
 
         self._state = self._state + 0.1 * action
+        self._state = self._state + self.wind
         reward = - np.linalg.norm(self._state - self._goal, ord=2)
         done = False
         ob = self._get_obs()
@@ -216,10 +221,10 @@ class PointEnv(Env):
         color_map = mpl.colors.ListedColormap(sns.color_palette("husl", num_episodes))
 
         observations = torch.stack([episode_prev_obs[i] for i in range(num_episodes)]).cpu().numpy()
-        curr_task = env.get_task()
+        curr_task = env.get_task()[0]
 
         # plot goal
-        axis.scatter(*curr_task, marker='x', color='k', s=50)
+        axis.scatter(curr_task[0], curr_task[1], marker='x', color='k', s=50)
         # radius where we get reward
         if hasattr(self, 'goal_radius'):
             circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
@@ -248,6 +253,7 @@ class PointEnv(Env):
         plt.yticks([])
         plt.legend()
         plt.tight_layout()
+        kwargs['logger'].add_figure('belief', figure, iter_idx)
         if image_folder is not None:
             plt.savefig('{}/{}_behaviour.png'.format(image_folder, iter_idx), dpi=300, bbox_inches='tight')
             plt.close()

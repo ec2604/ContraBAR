@@ -8,12 +8,15 @@ import torch
 from algorithms.a2c import A2C
 from algorithms.online_storage import CPCOnlineStorage
 from algorithms.ppo import PPO
+from algorithms.sac import SAC
 from environments.parallel_envs import make_vec_envs
 from models.policy import Policy
 from utils import evaluation as utl_eval
 from utils import helpers as utl
 from utils.tb_logger import TBLogger
 from cpc import VaribadCPC
+from models.encoder import ImageEncoder
+from utils.storage_vae import RolloutStorageVAE
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -22,6 +25,7 @@ class MetaLearner:
     """
     Meta-Learner class with the main training loop for variBAD.
     """
+
     def __init__(self, args):
 
         self.args = args
@@ -84,17 +88,28 @@ class MetaLearner:
         self.policy = self.initialise_policy()
 
     def initialise_policy_storage(self):
-        return CPCOnlineStorage(args=self.args,
-                             num_steps=self.args.policy_num_steps,
-                             num_processes=self.args.num_processes,
-                             state_dim=self.args.state_dim,
-                             latent_dim=self.args.latent_dim,
-                             belief_dim=self.args.belief_dim,
-                             task_dim=self.args.task_dim,
-                             action_space=self.args.action_space,
-                             hidden_size=self.args.latent_dim,
-                             normalise_rewards=self.args.norm_rew_for_policy,
-                             )
+        if self.args.policy != 'sac':
+            return CPCOnlineStorage(args=self.args,
+                                    num_steps=self.args.policy_num_steps,
+                                    num_processes=self.args.num_processes,
+                                    state_dim=self.args.state_dim,
+                                    latent_dim=self.args.latent_dim,
+                                    belief_dim=self.args.belief_dim,
+                                    task_dim=self.args.task_dim,
+                                    action_space=self.args.action_space,
+                                    hidden_size=self.args.latent_dim,  # self.args.encoder_gru_hidden_size,
+                                    normalise_rewards=self.args.norm_rew_for_policy,
+                                    )
+        else:
+            return RolloutStorageVAE(num_processes=self.args.num_processes,
+                                     max_trajectory_len=self.args.max_trajectory_len,
+                                     zero_pad=True,
+                                     max_num_rollouts=self.args.size_vae_buffer,
+                                     state_dim=self.args.state_dim,
+                                     action_dim=self.args.action_dim,
+                                     vae_buffer_add_thresh=self.args.vae_buffer_add_thresh,
+                                     task_dim=self.args.task_dim
+                                     )
 
     def initialise_policy(self):
 
@@ -152,6 +167,24 @@ class MetaLearner:
                 clip_param=self.args.ppo_clip_param,
                 optimiser_vae=self.cpc_encoder.cpc_optimizer
             )
+        elif self.args.policy == 'sac':
+            q1_network = ImageEncoder(self.args.state_dim, 1, self.args.q1_hidden_sizes)
+            q2_network = ImageEncoder(self.args.state_dim, 1, self.args.q2_hidden_sizes)
+
+            policy = SAC(
+                self.args,
+                policy_net,
+                q1_network,
+                q2_network,
+                actor_lr=self.args.actor_lr,
+                critic_lr=self.args.critic_lr,
+                gamma=self.args.policy_gamma,
+                tau=self.args.soft_target_tau,
+
+                entropy_alpha=self.args.entropy_alpha,
+                automatic_entropy_tuning=self.args.automatic_entropy_tuning,
+                alpha_lr=self.args.alpha_lr
+            ).to(device)
         else:
             raise NotImplementedError
 
@@ -196,13 +229,15 @@ class MetaLearner:
                     )
 
                 # take step in the environment
-                [next_state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action, self.args)
+                [next_state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action,
+                                                                                                  self.args)
 
                 done = torch.from_numpy(np.array(done, dtype=int)).to(device).float().view((-1, 1))
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done]).to(device)
                 # bad_mask is true if episode ended because time limit was reached
-                bad_masks = torch.FloatTensor([[0.0] if 'bad_transition' in info.keys() else [1.0] for info in infos]).to(device)
+                bad_masks = torch.FloatTensor(
+                    [[0.0] if 'bad_transition' in info.keys() else [1.0] for info in infos]).to(device)
 
                 with torch.no_grad():
                     # compute next embedding (for next loop and/or value prediction bootstrap)
@@ -218,11 +253,11 @@ class MetaLearner:
                 # (last state might include useful task info)
                 if not (self.args.disable_decoder and self.args.disable_kl_term):
                     self.cpc_encoder.rollout_storage.insert(prev_state.clone(),
-                                                    action.detach().clone(),
-                                                    next_state.clone(),
-                                                    rew_raw.clone(),
-                                                    done.clone(),
-                                                    task.clone())
+                                                            action.detach().clone(),
+                                                            next_state.clone(),
+                                                            rew_raw.clone(),
+                                                            done.clone(),
+                                                            task.clone())
 
                 # add the obs before reset to the policy storage
                 self.policy_storage.next_state[step] = next_state.clone()
@@ -257,14 +292,14 @@ class MetaLearner:
                 self.frames += self.args.num_processes
 
             # --- UPDATE ---
-
-            if self.args.precollect_len <= self.frames:
-
+            if self.args.precollect_len > self.frames:
+                print(f'Precollect frames so far: {self.frames}', flush=True)
+            else:
                 # check if we are pre-training the VAE
                 if self.args.pretrain_len > self.iter_idx:
-                    for p in range(20):#range(self.args.num_vae_updates_per_pretrain):
+                    for p in range(20):  # range(self.args.num_vae_updates_per_pretrain):
                         self.cpc_encoder.compute_cpc_loss(update=True,
-                                                  pretrain_index=self.iter_idx * 20 + p)#self.args.num_vae_updates_per_pretrain + p)
+                                                          pretrain_index=self.iter_idx * 20 + p)  # self.args.num_vae_updates_per_pretrain + p)
                 # otherwise do the normal update (policy + vae)
                 else:
 
@@ -295,10 +330,10 @@ class MetaLearner:
 
         # get embedding - will return (1+sequence_len) * batch * input_size -- includes the prior!
         all_hidden_states = self.cpc_encoder.encoder(actions=act,
-                                                                                                       states=next_obs,
-                                                                                                       rewards=rew,
-                                                                                                       hidden_state=None,
-                                                                                                       return_prior=True)
+                                                     states=next_obs,
+                                                     rewards=rew,
+                                                     hidden_state=None,
+                                                     return_prior=True)
 
         # get the embedding / hidden state of the current time step (need to do this since we zero-padded)
         hidden_state = (torch.stack([all_hidden_states[lens[i]][i] for i in range(len(lens))])).to(device)
@@ -333,7 +368,8 @@ class MetaLearner:
                 policy_storage=self.policy_storage,
                 encoder=self.cpc_encoder.encoder,
                 rlloss_through_encoder=self.args.rlloss_through_encoder,
-                compute_cpc_loss=self.cpc_encoder.compute_cpc_loss)
+                # compute_cpc_loss=self.cpc_encoder.compute_cpc_loss,update_cpc=self.iter_idx < 4000)
+                compute_cpc_loss=self.cpc_encoder.compute_cpc_loss, update_cpc=True)
         else:
             policy_train_stats = 0, 0, 0, 0
 
@@ -356,12 +392,14 @@ class MetaLearner:
                                          ret_rms=ret_rms,
                                          encoder=self.cpc_encoder.encoder,
                                          tasks=self.train_tasks,
-                                         reward_decoder=self.cpc_encoder.reward_predictor if hasattr(self.cpc_encoder, 'reward_predictor') else None,
+                                         reward_decoder=self.cpc_encoder.reward_predictor if hasattr(self.cpc_encoder,
+                                                                                                     'reward_predictor') else None,
                                          logger=self.logger
                                          )
 
         # --- evaluate policy ----
         if (self.iter_idx + 1) % self.args.eval_interval == 0:
+            # if  (self.iter_idx + 1) % self.args.vis_interval == 1:
             ret_rms = self.envs.venv.ret_rms if self.args.norm_rew_for_policy else None
             returns_per_episode = utl_eval.evaluate(args=self.args,
                                                     policy=self.policy,
@@ -369,6 +407,8 @@ class MetaLearner:
                                                     encoder=self.cpc_encoder.encoder,
                                                     iter_idx=self.iter_idx,
                                                     tasks=self.train_tasks,
+                                                    cpc_evaluation_loss=self.cpc_encoder.compute_cpc_loss,
+                                                    rollout_storage=self.cpc_encoder.rollout_storage
                                                     )
 
             # log the return avg/std across tasks (=processes)
@@ -420,6 +460,7 @@ class MetaLearner:
 
             self.logger.add('environment/rew_max', self.policy_storage.rewards_raw.max(), self.iter_idx)
             self.logger.add('environment/rew_min', self.policy_storage.rewards_raw.min(), self.iter_idx)
+            self.logger.add('train_reward/mean', self.policy_storage.rewards_raw.sum(axis=0).mean(), self.iter_idx)
 
             self.logger.add('policy_losses/value_loss', train_stats[0], self.iter_idx)
             self.logger.add('policy_losses/action_loss', train_stats[1], self.iter_idx)
@@ -441,9 +482,9 @@ class MetaLearner:
                 [self.policy.actor_critic, 'policy'],
                 [self.cpc_encoder.encoder, 'encoder'],
                 [self.cpc_encoder.mlp, 'cpc_mlp']
-                #[self.vae.reward_decoder, 'reward_decoder'],
-                #[self.vae.state_decoder, 'state_transition_decoder'],
-               # [self.vae.task_decoder, 'task_decoder']
+                # [self.vae.reward_decoder, 'reward_decoder'],
+                # [self.vae.state_decoder, 'state_transition_decoder'],
+                # [self.vae.task_decoder, 'task_decoder']
             ]:
                 if model is not None:
                     param_list = list(model.parameters())
@@ -452,5 +493,6 @@ class MetaLearner:
                     if name == 'policy':
                         self.logger.add('weights/policy_std', param_list[0].data.mean(), self.iter_idx)
                     if param_list[0].grad is not None:
-                        param_grad_mean = np.mean([param_list[i].grad.cpu().numpy().mean() for i in range(len(param_list))])
+                        param_grad_mean = np.mean(
+                            [param_list[i].grad.cpu().numpy().mean() for i in range(len(param_list))])
                         self.logger.add('gradients/{}'.format(name), param_grad_mean, self.iter_idx)

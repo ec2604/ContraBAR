@@ -58,8 +58,8 @@ class PPO:
                policy_storage,
                encoder=None,  # variBAD encoder
                rlloss_through_encoder=False,  # whether or not to backprop RL loss through encoder
-               compute_cpc_loss=None  # function that can compute the VAE loss
-               ):
+               compute_cpc_loss=None,  # function that can compute the VAE loss
+               **kwargs):
 
         # -- get action values --
         advantages = policy_storage.returns[:-1] - policy_storage.value_preds[:-1]
@@ -98,7 +98,8 @@ class PPO:
                     #     latent_sample_batch = latent_sample_batch.detach()
                     #     latent_mean_batch = latent_mean_batch.detach()
                     #     latent_logvar_batch = latent_logvar_batch.detach()
-                    hidden_batch.detach()
+                    if self.args.pass_latent_to_policy:
+                        hidden_batch = hidden_batch.detach()
                 # latent_batch = utl.get_latent_for_policy(args=self.args, latent_sample=latent_sample_batch,
                 #                                          latent_mean=latent_mean_batch,
                 #                                          latent_logvar=latent_logvar_batch
@@ -171,10 +172,11 @@ class PPO:
                                                                                               'tbptt_stepsize') else None)
 
         if (not rlloss_through_encoder) and (self.optimiser_vae is not None):
+
             for i in range(self.args.num_vae_updates):
                 cpc_loss = None
                 while cpc_loss is None:
-                     cpc_loss = compute_cpc_loss(update=True, log= i == (self.args.num_vae_updates -1))
+                     cpc_loss = compute_cpc_loss(update=kwargs['update_cpc'], log= i == (self.args.num_vae_updates -1))
 
         if self.lr_scheduler_policy is not None:
             self.lr_scheduler_policy.step()

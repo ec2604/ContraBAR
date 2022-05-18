@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from utils import helpers as utl
+from models.encoder import ImageEncoder
 try:
     from torch.distributions import TanhTransform, TransformedDistribution
 
@@ -103,8 +104,12 @@ class Policy(nn.Module):
                 self.state_encoder = kwargs['encoder'].state_encoder
                 curr_input_dim = curr_input_dim - dim_state[0] + self.args.state_embedding_size
             else:
-                self.state_encoder = utl.FeatureExtractor(*dim_state, self.args.policy_state_embedding_dim, self.activation_function)
-                curr_input_dim = curr_input_dim - dim_state[0] + self.args.policy_state_embedding_dim
+                if len(dim_state) == 1:
+                    self.state_encoder = utl.FeatureExtractor(*dim_state, self.args.policy_state_embedding_dim, self.activation_function)
+                    curr_input_dim = curr_input_dim - dim_state[0] + self.args.policy_state_embedding_dim
+                else:
+                    self.state_encoder = ImageEncoder(dim_state, self.args.policy_state_embedding_dim, self.args.image_encoder_layers)
+                    curr_input_dim = curr_input_dim - dim_state[0] + self.args.policy_state_embedding_dim
         self.use_latent_encoder = self.args.policy_latent_embedding_dim is not None
         if self.pass_latent_to_policy and self.use_latent_encoder:
             self.latent_encoder = utl.FeatureExtractor(dim_latent, self.args.policy_latent_embedding_dim, self.activation_function)
@@ -117,7 +122,6 @@ class Policy(nn.Module):
         if self.pass_task_to_policy and self.use_task_encoder:
             self.task_encoder = utl.FeatureExtractor(dim_task, self.args.policy_task_embedding_dim, self.activation_function)
             curr_input_dim = curr_input_dim - dim_task + self.args.policy_task_embedding_dim
-
         # initialise actor and critic
         hidden_layers = [int(h) for h in hidden_layers]
         self.actor_layers = nn.ModuleList()
@@ -175,7 +179,11 @@ class Policy(nn.Module):
                         state = self.state_encoder(state)
                         state = state.reshape(*orig_state_shape[:-3], -1)
                 else:
+                    # state = self.state_encoder(state)
+                    orig_state_shape = state.shape
+                    state = state.reshape((-1, *state.shape[-3:]))
                     state = self.state_encoder(state)
+                    state = state.reshape(*orig_state_shape[:-3], -1)
         else:
             state = torch.zeros(0, ).to(device)
         if self.pass_latent_to_policy:
@@ -202,7 +210,6 @@ class Policy(nn.Module):
 
         # concatenate inputs
         inputs = torch.cat((state, latent, belief, task), dim=-1)
-
         # forward through critic/actor part
         hidden_critic = self.forward_critic(inputs)
         hidden_actor = self.forward_actor(inputs)
