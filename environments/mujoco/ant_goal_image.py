@@ -10,16 +10,14 @@ from utils import helpers as utl
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-
-
 class AntGoalEnvImage(AntEnv):
-    def __init__(self, max_episode_steps=200):#, stochastic_moves=True):
+    def __init__(self, max_episode_steps=200):  # , stochastic_moves=True):
         self.set_task(self.sample_tasks(1))
         self._max_episode_steps = max_episode_steps
         self.task_dim = 2
         self._frames = deque([], maxlen=3)
-        #self.wind = np.array([0, 0])
-        #self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
+        # self.wind = np.array([0, 0])
+        # self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
         super(AntGoalEnvImage, self).__init__()
 
     def step(self, action):
@@ -55,8 +53,9 @@ class AntGoalEnvImage(AntEnv):
         )
 
     def viewer_setup(self):
-    #     self.viewer.cam.trackbodyid = 0  # id of the body to track ()
+        #     self.viewer.cam.trackbodyid = 0  # id of the body to track ()
         self.viewer.cam.distance = self.model.stat.extent * 0.5  # how much you "zoom in", model.stat.extent is the max limits of the arena
+
     #     self.viewer.cam.lookat[0] += 0.5  # x,y,z offset from the object (works if trackbodyid=-1)
     #     self.viewer.cam.lookat[1] += 0.5
     #     self.viewer.cam.lookat[2] += 0.5
@@ -85,7 +84,7 @@ class AntGoalEnvImage(AntEnv):
     def reset(self, again=True):
         """
         Reset the environment. This should *NOT* reset the task!
-        Resetting the task is handled in the varibad wrapper (see wrappers.py).
+        Resetting the task is handled in the contrabar wrapper (see wrappers.py).
         """
         if again:
             super().reset()
@@ -133,7 +132,7 @@ class AntGoalEnvImage(AntEnv):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_obs_raw = state.clone()
         task = task.view(-1) if task is not None else None
 
@@ -159,7 +158,6 @@ class AntGoalEnvImage(AntEnv):
                     current_hidden_state.to(device)
             episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
-
             for step_idx in range(1, env._max_episode_steps + 1):
 
                 if step_idx == 1:
@@ -167,17 +165,10 @@ class AntGoalEnvImage(AntEnv):
                 else:
                     episode_prev_obs[episode_idx].append(state.clone())
                 # act
-                _, action = utl.select_action_cpc(args=args,
-                                                 policy=policy,
-                                                 belief=belief,
-                                                 task=task,
-                                                 deterministic=True,
-                                                 state=state,
-                                                 hidden_latent=current_hidden_state.squeeze(0)
-                                                 )
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
 
-
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.float().to(device)
                 task = task.view(-1) if task is not None else None
 
@@ -214,7 +205,7 @@ class AntGoalEnvImage(AntEnv):
         kwargs['logger'].add_video('behaviour_video_rollout_1',
                                    episode_prev_obs[0][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
         kwargs['logger'].add_video('behaviour_video_rollout_2',
-                                   episode_prev_obs[1   ][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
+                                   episode_prev_obs[1][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
         # plot the movement of the ant
         # print(pos)
         figure = plt.figure(figsize=(5, 4 * num_episodes))
@@ -259,3 +250,36 @@ class AntGoalEnvImage(AntEnv):
             return episode_hidden_states, \
                    episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                    episode_returns, pos
+
+
+class SparseAntGoalEnvImage(AntGoalEnvImage):
+    def __init__(self, max_episode_steps=200, goal_radius=0.2):  # , stochastic_moves=True):
+        self.goal_radius = goal_radius
+        # self.wind = np.array([0, 0])
+        # self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
+        super().__init__(max_episode_steps)
+
+    def step(self, action):
+        ob, reward, done, d = super().step(action)
+        if self.is_goal_state():
+            ob[2, -20:, ...] = 0
+        sparse_reward = self.sparsify_rewards(d)
+        return ob, sparse_reward, done, d
+
+    def is_goal_state(self, state=None):
+        if state is None:
+            state = np.array(self.get_body_com("torso"))
+        if np.linalg.norm(state[:2] - self.goal_pos) <= self.goal_radius:
+            return True
+        else:
+            return False
+
+    def sparsify_rewards(self, d):
+        # non_goal_reward_keys = []
+        # for key in d.keys():
+        #     if key.startswith('reward') and key != "reward_goal":
+        #         non_goal_reward_keys.append(key)
+        # non_goal_rewards = np.sum([d[reward_key] for reward_key in non_goal_reward_keys])
+        #non_goal_rewards = d['reward_ctrl']
+        sparse_goal_reward = 1. if self.is_goal_state() else 0.
+        return sparse_goal_reward#non_goal_rewards + sparse_goal_reward

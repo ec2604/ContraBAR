@@ -13,7 +13,7 @@ def get_args(rest_args):
     parser.add_argument('--exp_label', default='rl2', help='label (typically name of method)')
     parser.add_argument('--env_name', default='SparsePointEnv-v0', help='environment to train on')
 
-    # -- RL2 (things to change in VariBAD to get to RL2 setup) --
+    # -- RL2 (things to change in contrabar to get to RL2 setup) --
 
     parser.add_argument('--disable_decoder', type=boolean_argument, default=True,
                         help='train without decoder')
@@ -23,7 +23,7 @@ def get_args(rest_args):
                         help='Use relu before feeding latent to policy')
     parser.add_argument('--rlloss_through_encoder', type=boolean_argument, default=True,
                         help='backprop rl loss through encoder')
-    # note: the latent_dim is just a layer in the policy (name comes from varibad code)
+    # note: the latent_dim is just a layer in the policy (name comes from contrabar code)
     parser.add_argument('--latent_dim', type=int, default=128, help='dimensionality of latent space')
 
     # --- POLICY ---
@@ -32,7 +32,6 @@ def get_args(rest_args):
     #   note: because we use RL2, we do not pass the state again after the encoder
     parser.add_argument('--pass_state_to_policy', type=boolean_argument, default=False, help='condition policy on state')
     parser.add_argument('--pass_latent_to_policy', type=boolean_argument, default=True, help='condition policy on VAE latent')
-    parser.add_argument('--pass_belief_to_policy', type=boolean_argument, default=False, help='condition policy on ground-truth belief')
     parser.add_argument('--pass_task_to_policy', type=boolean_argument, default=False, help='condition policy on ground-truth task description')
 
     # using separate encoders for the different inputs ("None" uses no encoder)
@@ -70,7 +69,7 @@ def get_args(rest_args):
     # other hyperparameters
     parser.add_argument('--lr_policy', type=float, default=7e-4, help='learning rate (default: 7e-4)')
     # Since we use RL2, we have to match this learning rate (for the encoder) with the policy learning rate
-    parser.add_argument('--lr_vae', type=float, default=7e-4)
+    parser.add_argument('--lr_representation_learner', type=float, default=7e-4)
     parser.add_argument('--num_processes', type=int, default=16,
                         help='how many training CPU processes / parallel environments to use (default: 16)')
     parser.add_argument('--policy_num_steps', type=int, default=600,
@@ -89,38 +88,36 @@ def get_args(rest_args):
     parser.add_argument('--encoder_max_grad_norm', type=float, default=0.5, help='max norm of gradients')
     parser.add_argument('--decoder_max_grad_norm', type=float, default=None, help='max norm of gradients')
 
-    # --- VAE TRAINING ---
+    # --- REP LEARNER TRAINING ---
 
+    # cpc
+    parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples for CPC')
+    parser.add_argument('--sampling_method', type=str, default='fast', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
     # general
-    parser.add_argument('--size_vae_buffer', type=int, default=0,
+    parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
+    parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
+    parser.add_argument('--num_trajs_representation_learning_buffer', type=int, default=0,
                         help='how many trajectories (!) to keep in VAE buffer')
     parser.add_argument('--precollect_len', type=int, default=0,
                         help='how many frames to pre-collect before training begins (useful to fill VAE buffer)')
-    parser.add_argument('--vae_buffer_add_thresh', type=float, default=1,
+    parser.add_argument('--representation_learner_buffer_add_thresh', type=float, default=1,
                         help='probability of adding a new trajectory to buffer')
-    parser.add_argument('--vae_batch_num_trajs', type=int, default=10,
+    parser.add_argument('--representation_learner_batch_num_trajs', type=int, default=10,
                         help='how many trajectories to use for VAE update')
     parser.add_argument('--tbptt_stepsize', type=int, default=None,
                         help='stepsize for truncated backpropagation through time; None uses max (horizon of BAMDP)')
-    parser.add_argument('--vae_subsample_elbos', type=int, default=None,
-                        help='for how many timesteps to compute the ELBO; None uses all')
-    parser.add_argument('--vae_subsample_decodes', type=int, default=None,
-                        help='number of reconstruction terms to subsample; None uses all')
-    parser.add_argument('--vae_avg_elbo_terms', type=boolean_argument, default=False,
-                        help='Average ELBO terms (instead of sum)')
-    parser.add_argument('--vae_avg_reconstruction_terms', type=boolean_argument, default=False,
-                        help='Average reconstruction terms (instead of sum)')
-    parser.add_argument('--num_vae_updates', type=int, default=1,
+
+
+    parser.add_argument('--num_representation_learner_updates', type=int, default=1,
                         help='how many VAE update steps to take per meta-iteration')
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
-    parser.add_argument('--kl_weight', type=float, default=1.0, help='weight for the KL term')
-
     parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,
                         help='split batches up by task (to save memory or if tasks are of different length)')
     parser.add_argument('--split_batches_by_elbo', type=boolean_argument, default=False,
                         help='split batches up by elbo term (to save memory of if ELBOs are of different length)')
-
-    # - encoder
+    parser.add_argument('--evaluate_representation', type=boolean_argument, default=False, help='train MLP to evaluate latent, without gradients flowing back')
+    parser.add_argument('--evaluator_lr', type=float, default=1e-3, help='lr for MLP to evaluate representation')
+# - encoder
     parser.add_argument('--action_embedding_size', type=int, default=16)
     parser.add_argument('--state_embedding_size', type=int, default=32)
     parser.add_argument('--reward_embedding_size', type=int, default=16)
@@ -142,27 +139,13 @@ def get_args(rest_args):
                              'categorical (predict p(r=1|s) but use softmax instead of sigmoid)'
                              'deterministic (treat as regression problem)')
 
-    # - decoder: state transitions
-    parser.add_argument('--decode_state', type=boolean_argument, default=False, help='use state decoder')
-    parser.add_argument('--state_loss_coeff', type=float, default=1.0, help='weight for state loss')
-    parser.add_argument('--state_decoder_layers', nargs='+', type=int, default=[64, 32])
-    parser.add_argument('--state_pred_type', type=str, default='deterministic', help='choose: deterministic, gaussian')
-
-    # - decoder: ground-truth task ("varibad oracle", after Humplik et al. 2019)
-    parser.add_argument('--decode_task', type=boolean_argument, default=False, help='use task decoder')
-    parser.add_argument('--task_loss_coeff', type=float, default=1.0, help='weight for task loss')
-    parser.add_argument('--task_decoder_layers', nargs='+', type=int, default=[64, 32])
-    parser.add_argument('--task_pred_type', type=str, default='task_id', help='choose: task_id, task_description')
-
-    # --- ABLATIONS ---
+# --- ABLATIONS ---
 
     # for the policy training
-    parser.add_argument('--sample_embeddings', type=boolean_argument, default=False,
-                        help='sample embedding for policy, instead of full belief')
+
 
     # combining vae and RL loss
-    parser.add_argument('--vae_loss_coeff', type=float, default=1.0,
-                        help='weight for VAE loss (vs RL loss)')
+
 
     # for other things
     parser.add_argument('--disable_metalearner', type=boolean_argument, default=False,

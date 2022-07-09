@@ -14,16 +14,16 @@ from models.policy import Policy
 from utils import evaluation as utl_eval
 from utils import helpers as utl
 from utils.tb_logger import TBLogger
-from cpc import VaribadCPC
+from cpc import contrabarCPC
 from models.encoder import ImageEncoder
-from utils.storage_vae import RolloutStorageVAE
+from utils.storage_vae import RolloutStorage
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class MetaLearner:
     """
-    Meta-Learner class with the main training loop for variBAD.
+    Meta-Learner class with the main training loop for contrabar.
     """
 
     def __init__(self, args):
@@ -83,57 +83,33 @@ class MetaLearner:
             self.args.action_dim = self.envs.action_space.shape[0]
 
         # initialise CPC and policy
-        self.cpc_encoder = VaribadCPC(self.args, self.logger, lambda: self.iter_idx)
+        self.cpc_encoder = contrabarCPC(self.args, self.logger, lambda: self.iter_idx)
         self.policy_storage = self.initialise_policy_storage()
         self.policy = self.initialise_policy()
 
     def initialise_policy_storage(self):
-        if self.args.policy != 'sac':
-            return CPCOnlineStorage(args=self.args,
-                                    num_steps=self.args.policy_num_steps,
-                                    num_processes=self.args.num_processes,
-                                    state_dim=self.args.state_dim,
-                                    latent_dim=self.args.latent_dim,
-                                    belief_dim=self.args.belief_dim,
-                                    task_dim=self.args.task_dim,
-                                    action_space=self.args.action_space,
-                                    hidden_size=self.args.latent_dim,  # self.args.encoder_gru_hidden_size,
-                                    normalise_rewards=self.args.norm_rew_for_policy,
-                                    )
-        else:
-            return RolloutStorageVAE(num_processes=self.args.num_processes,
-                                     max_trajectory_len=self.args.max_trajectory_len,
-                                     zero_pad=True,
-                                     max_num_rollouts=self.args.size_vae_buffer,
-                                     state_dim=self.args.state_dim,
-                                     action_dim=self.args.action_dim,
-                                     vae_buffer_add_thresh=self.args.vae_buffer_add_thresh,
-                                     task_dim=self.args.task_dim
-                                     )
+        return CPCOnlineStorage(args=self.args,
+                                num_steps=self.args.policy_num_steps,
+                                num_processes=self.args.num_processes,
+                                state_dim=self.args.state_dim,
+                                latent_dim=self.args.latent_dim,
+                                task_dim=self.args.task_dim,
+                                action_space=self.args.action_space,
+                                hidden_size=self.args.latent_dim,  # self.args.encoder_gru_hidden_size,
+                                normalise_rewards=self.args.norm_rew_for_policy,
+                                )
 
     def initialise_policy(self):
 
         # initialise policy network
-        policy_net = Policy(
-            args=self.args,
-            #
-            pass_state_to_policy=self.args.pass_state_to_policy,
-            pass_latent_to_policy=self.args.pass_latent_to_policy,
-            pass_belief_to_policy=self.args.pass_belief_to_policy,
-            pass_task_to_policy=self.args.pass_task_to_policy,
-            dim_state=self.args.state_dim,
-            dim_latent=self.args.latent_dim,
-            dim_belief=self.args.belief_dim,
-            dim_task=self.args.task_dim,
-            #
-            hidden_layers=self.args.policy_layers,
-            activation_function=self.args.policy_activation_function,
-            policy_initialisation=self.args.policy_initialisation,
-            #
-            action_space=self.envs.action_space,
-            init_std=self.args.policy_init_std,
-            encoder=self.cpc_encoder.encoder
-        ).to(device)
+        policy_net = Policy(args=self.args, pass_state_to_policy=self.args.pass_state_to_policy,
+                            pass_latent_to_policy=self.args.pass_latent_to_policy,
+                            pass_task_to_policy=self.args.pass_task_to_policy, dim_state=self.args.state_dim,
+                            dim_latent=self.args.latent_dim, dim_task=self.args.task_dim,
+                            hidden_layers=self.args.policy_layers,
+                            activation_function=self.args.policy_activation_function,
+                            policy_initialisation=self.args.policy_initialisation, action_space=self.envs.action_space,
+                            init_std=self.args.policy_init_std, encoder=self.cpc_encoder.encoder).to(device)
 
         # initialise policy trainer
         if self.args.policy == 'a2c':
@@ -145,46 +121,18 @@ class MetaLearner:
                 policy_optimiser=self.args.policy_optimiser,
                 policy_anneal_lr=self.args.policy_anneal_lr,
                 train_steps=self.num_updates,
-                optimiser_vae=self.vae.optimiser_vae,
+                optimiser_vae=self.vae.optimizer_representation_learner,
                 lr=self.args.lr_policy,
                 eps=self.args.policy_eps,
             )
         elif self.args.policy == 'ppo':
-            policy = PPO(
-                self.args,
-                policy_net,
-                self.args.policy_value_loss_coef,
-                self.args.policy_entropy_coef,
-                policy_optimiser=self.args.policy_optimiser,
-                policy_anneal_lr=self.args.policy_anneal_lr,
-                train_steps=self.num_updates,
-                lr=self.args.lr_policy,
-                eps=self.args.policy_eps,
-                ppo_epoch=self.args.ppo_num_epochs,
-                num_mini_batch=self.args.ppo_num_minibatch,
-                use_huber_loss=self.args.ppo_use_huberloss,
-                use_clipped_value_loss=self.args.ppo_use_clipped_value_loss,
-                clip_param=self.args.ppo_clip_param,
-                optimiser_vae=self.cpc_encoder.cpc_optimizer
-            )
-        elif self.args.policy == 'sac':
-            q1_network = ImageEncoder(self.args.state_dim, 1, self.args.q1_hidden_sizes)
-            q2_network = ImageEncoder(self.args.state_dim, 1, self.args.q2_hidden_sizes)
-
-            policy = SAC(
-                self.args,
-                policy_net,
-                q1_network,
-                q2_network,
-                actor_lr=self.args.actor_lr,
-                critic_lr=self.args.critic_lr,
-                gamma=self.args.policy_gamma,
-                tau=self.args.soft_target_tau,
-
-                entropy_alpha=self.args.entropy_alpha,
-                automatic_entropy_tuning=self.args.automatic_entropy_tuning,
-                alpha_lr=self.args.alpha_lr
-            ).to(device)
+            policy = PPO(self.args, policy_net, self.args.policy_value_loss_coef, self.args.policy_entropy_coef,
+                         policy_optimiser=self.args.policy_optimiser, policy_anneal_lr=self.args.policy_anneal_lr,
+                         train_steps=self.num_updates, optimizer_representation_learner=self.cpc_encoder.cpc_optimizer,
+                         lr=self.args.lr_policy, clip_param=self.args.ppo_clip_param,
+                         ppo_epoch=self.args.ppo_num_epochs, num_mini_batch=self.args.ppo_num_minibatch,
+                         eps=self.args.policy_eps, use_huber_loss=self.args.ppo_use_huberloss,
+                         use_clipped_value_loss=self.args.ppo_use_clipped_value_loss)
         else:
             raise NotImplementedError
 
@@ -195,14 +143,14 @@ class MetaLearner:
         start_time = time.time()
 
         # reset environments
-        prev_state, belief, task = utl.reset_env(self.envs, self.args)
+        prev_state, task = utl.reset_env(self.envs, self.args)
 
         # insert initial observation / embeddings to rollout storage
         self.policy_storage.prev_state[0].copy_(prev_state)
 
         # log once before training
-        # with torch.no_grad():
-        #     self.log(None, None, start_time)
+        with torch.no_grad():
+            self.log(None, None, None, None, start_time)
 
         for self.iter_idx in range(self.num_updates):
 
@@ -218,20 +166,17 @@ class MetaLearner:
 
                 # sample actions from policy
                 with torch.no_grad():
-                    value, action = utl.select_action_cpc(
-                        args=self.args,
-                        hidden_latent=hidden_state.squeeze(0),
-                        policy=self.policy,
-                        state=prev_state,
-                        belief=belief,
-                        task=task,
-                        deterministic=False
-                    )
+                    value, action = utl.select_action_cpc(args=self.args, policy=self.policy, deterministic=False,
+                                                          hidden_latent=hidden_state.squeeze(0), state=prev_state,
+                                                          task=task)
 
                 # take step in the environment
-                [next_state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action,
-                                                                                                  self.args)
-
+                [next_state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action,
+                                                                                          self.args)
+                if 'underlying_state_dim' in self.args and self.args.underlying_state_dim > 0:
+                    underlying_states = torch.from_numpy(np.stack([info['state'] for info in infos],axis=0)).to(device)
+                else:
+                    underlying_states = None
                 done = torch.from_numpy(np.array(done, dtype=int)).to(device).float().view((-1, 1))
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done]).to(device)
@@ -249,15 +194,11 @@ class MetaLearner:
                         done=done,
                         hidden_state=hidden_state)
 
-                # before resetting, update the embedding and add to vae buffer
+                # before resetting, update the embedding and add to cpc buffer
                 # (last state might include useful task info)
-                if not (self.args.disable_decoder and self.args.disable_kl_term):
-                    self.cpc_encoder.rollout_storage.insert(prev_state.clone(),
-                                                            action.detach().clone(),
-                                                            next_state.clone(),
-                                                            rew_raw.clone(),
-                                                            done.clone(),
-                                                            task.clone())
+                self.cpc_encoder.rollout_storage.insert(prev_state.clone(), action.clone(), next_state.clone(),
+                                                        rew_raw.clone(),
+                                                        done.clone(), task.clone(), underlying_states.clone() if underlying_states is not None else underlying_states)
 
                 # add the obs before reset to the policy storage
                 self.policy_storage.next_state[step] = next_state.clone()
@@ -265,27 +206,14 @@ class MetaLearner:
                 # reset environments that are done
                 done_indices = np.argwhere(done.cpu().flatten()).flatten()
                 if len(done_indices) > 0:
-                    next_state, belief, task = utl.reset_env(self.envs, self.args,
-                                                             indices=done_indices, state=next_state)
-
-                # TODO: deal with resampling for posterior sampling algorithm
-                #     latent_sample = latent_sample
-                #     latent_sample[i] = latent_sample[i]
+                    next_state, task = utl.reset_env(self.envs, self.args,
+                                                     indices=done_indices, state=next_state)
 
                 # add experience to policy buffer
-                self.policy_storage.insert(
-                    state=next_state,
-                    belief=belief,
-                    task=task if self.args.pass_task_to_policy else None,
-                    actions=action,
-                    rewards_raw=rew_raw,
-                    rewards_normalised=rew_normalised,
-                    value_preds=value,
-                    masks=masks_done,
-                    bad_masks=bad_masks,
-                    done=done,
-                    hidden_states=hidden_state.squeeze(0)
-                )
+                self.policy_storage.insert(state=next_state, task=task if self.args.pass_task_to_policy else None,
+                                           actions=action, rewards_raw=rew_raw, rewards_normalised=rew_normalised,
+                                           value_preds=value, masks=masks_done, bad_masks=bad_masks, done=done,
+                                           hidden_states=hidden_state.squeeze(0))
 
                 prev_state = next_state
 
@@ -295,23 +223,23 @@ class MetaLearner:
             if self.args.precollect_len > self.frames:
                 print(f'Precollect frames so far: {self.frames}', flush=True)
             else:
-                # check if we are pre-training the VAE
+                # check if we are pre-training the representation learner
                 if self.args.pretrain_len > self.iter_idx:
-                    for p in range(20):  # range(self.args.num_vae_updates_per_pretrain):
+                    for p in range(20):  # range(self.args.num_representation_learner_updates_per_pretrain):
                         self.cpc_encoder.compute_cpc_loss(update=True,
-                                                          pretrain_index=self.iter_idx * 20 + p)  # self.args.num_vae_updates_per_pretrain + p)
+                                                          pretrain_index=self.iter_idx * 20 + p)  # self.args.num_representation_learner_updates_per_pretrain + p)
                 # otherwise do the normal update (policy + vae)
                 else:
 
-                    train_stats = self.update(state=prev_state,
-                                              belief=belief,
-                                              task=task if self.args.pass_task_to_policy else None,
-                                              hidden=hidden_state.squeeze(0))
+                    train_policy_stats, train_representation_learner_stats, evaluation_loss = self.meta_update(state=prev_state,
+                                                                                              task=task if self.args.pass_task_to_policy else None,
+                                                                                              hidden=hidden_state.squeeze(
+                                                                                                  0))
 
                     # log
                     run_stats = [action, self.policy_storage.action_log_probs, value]
                     with torch.no_grad():
-                        self.log(run_stats, train_stats, start_time)
+                        self.log(run_stats, train_policy_stats, train_representation_learner_stats, evaluation_loss, start_time)
 
             # clean up after update
             self.policy_storage.after_update()
@@ -340,46 +268,60 @@ class MetaLearner:
 
         return hidden_state
 
-    def get_value(self, state, belief, task, hidden_state):
-        return self.policy.actor_critic.get_value(state=state, belief=belief, task=task, latent=hidden_state).detach()
+    def get_value(self, state, task, hidden_state):
+        return self.policy.actor_critic.get_value(state=state, latent=hidden_state, task=task).detach()
 
-    def update(self, state, belief, task, hidden):
+    def meta_update(self, state, task, hidden):
         """
         Meta-update.
         Here the policy is updated for good average performance across tasks.
         :return:
         """
-        # update policy (if we are not pre-training, have enough data in the vae buffer, and are not at iteration 0)
+        # update policy (if we are not pre-training, have enough data in the representation learner buffer, and are not at iteration 0)
         if self.iter_idx >= self.args.pretrain_len and self.iter_idx > 0:
 
             # bootstrap next value prediction
             with torch.no_grad():
-                next_value = self.get_value(state=state,
-                                            belief=belief,
-                                            task=task, hidden_state=hidden)
+                next_value = self.get_value(state=state, task=task, hidden_state=hidden)
 
             # compute returns for current rollouts
             self.policy_storage.compute_returns(next_value, self.args.policy_use_gae, self.args.policy_gamma,
                                                 self.args.policy_tau,
                                                 use_proper_time_limits=self.args.use_proper_time_limits)
 
-            # update agent (this will also call the VAE update!)
-            policy_train_stats = self.policy.update(
-                policy_storage=self.policy_storage,
-                encoder=self.cpc_encoder.encoder,
-                rlloss_through_encoder=self.args.rlloss_through_encoder,
-                # compute_cpc_loss=self.cpc_encoder.compute_cpc_loss,update_cpc=self.iter_idx < 4000)
-                compute_cpc_loss=self.cpc_encoder.compute_cpc_loss, update_cpc=True)
+            # update agent
+            policy_train_stats = self.policy.policy_update(policy_storage=self.policy_storage)
+            representation_learner_train_stats = self.cpc_encoder.update_cpc()
+            evaluator_loss = None
+            if self.args.evaluate_representation and self.iter_idx >= self.args.evaluate_start_iter:
+                evaluator_loss = self.cpc_encoder.update_latent_evaluator(
+                    representation_learner_train_stats.tasks, representation_learner_train_stats.hidden_states)
+
         else:
             policy_train_stats = 0, 0, 0, 0
-
+            representation_learner_train_stats = None
             # pre-train the VAE
             if self.iter_idx < self.args.pretrain_len:
                 self.vae.compute_vae_loss(update=True)
 
-        return policy_train_stats
+        return policy_train_stats, representation_learner_train_stats, evaluator_loss
 
-    def log(self, run_stats, train_stats, start_time):
+    def log_evaluator_stats(self, log_prefix, stat):
+        self.logger.add(f'cpc_evaluator/{log_prefix}_loss', stat, self.iter_idx)
+
+    def log_cpc_stats(self, log_prefix, stats):
+        self.logger.add(f'cpc/{log_prefix}_loss', stats.cpc_loss, self.iter_idx)
+        self.logger.add(f'cpc/{log_prefix}_fraction_examples_reward_seen',
+                        stats.fraction_examples_reward_seen,
+                        self.iter_idx)
+        self.logger.add(f'cpc/{log_prefix}_fraction_trajectories_reward_seen',
+                        stats.fraction_trajectories_reward_seen, self.iter_idx)
+        self.logger.add_hist(f'cpc/{log_prefix}_z_dist', stats.z_dist, self.iter_idx)
+        belief_norm = torch.norm(stats.hidden_states, dim=-1).reshape(-1)
+        self.logger.add_hist(f'cpc/{log_prefix}_belief_norm', belief_norm, self.iter_idx)
+        self.logger.add(f'cpc/{log_prefix}_avg_num_sampled', stats.num_sampled, self.iter_idx)
+
+    def log(self, run_stats, train_policy_stats, train_cpc_stats, train_evaluation_loss, start_time):
 
         # --- visualise behaviour of policy ---
 
@@ -390,7 +332,7 @@ class MetaLearner:
                                          image_folder=self.logger.full_output_folder,
                                          iter_idx=self.iter_idx,
                                          ret_rms=ret_rms,
-                                         encoder=self.cpc_encoder.encoder,
+                                         encoder=self.cpc_encoder,
                                          tasks=self.train_tasks,
                                          reward_decoder=self.cpc_encoder.reward_predictor if hasattr(self.cpc_encoder,
                                                                                                      'reward_predictor') else None,
@@ -401,29 +343,34 @@ class MetaLearner:
         if (self.iter_idx + 1) % self.args.eval_interval == 0:
             # if  (self.iter_idx + 1) % self.args.vis_interval == 1:
             ret_rms = self.envs.venv.ret_rms if self.args.norm_rew_for_policy else None
-            returns_per_episode = utl_eval.evaluate(args=self.args,
-                                                    policy=self.policy,
-                                                    ret_rms=ret_rms,
-                                                    encoder=self.cpc_encoder.encoder,
-                                                    iter_idx=self.iter_idx,
-                                                    tasks=self.train_tasks,
-                                                    cpc_evaluation_loss=self.cpc_encoder.compute_cpc_loss,
-                                                    rollout_storage=self.cpc_encoder.rollout_storage
-                                                    )
+            returns_per_episode, eval_cpc_stats, eval_evaluator_stats = utl_eval.evaluate(args=self.args,
+                                                                                          policy=self.policy,
+                                                                                          ret_rms=ret_rms,
+                                                                                          encoder=self.cpc_encoder,
+                                                                                          iter_idx=self.iter_idx,
+                                                                                          tasks=self.train_tasks,
+                                                                                          )
 
             # log the return avg/std across tasks (=processes)
             returns_avg = returns_per_episode.mean(dim=0)
             returns_std = returns_per_episode.std(dim=0)
             for k in range(len(returns_avg)):
+                self.logger.add_hist('returns_per_iter_hist/episode_{}'.format(k + 1),
+                                     returns_per_episode[:, k].reshape(-1), self.iter_idx)
                 self.logger.add('return_avg_per_iter/episode_{}'.format(k + 1), returns_avg[k], self.iter_idx)
                 self.logger.add('return_avg_per_frame/episode_{}'.format(k + 1), returns_avg[k], self.frames)
                 self.logger.add('return_std_per_iter/episode_{}'.format(k + 1), returns_std[k], self.iter_idx)
                 self.logger.add('return_std_per_frame/episode_{}'.format(k + 1), returns_std[k], self.frames)
 
+            self.log_cpc_stats(stats=eval_cpc_stats, log_prefix='eval')
+            if self.args.evaluate_representation:
+                self.log_evaluator_stats('eval', eval_evaluator_stats)
+
             print(f"Updates {self.iter_idx}, "
                   f"Frames {self.frames}, "
                   f"FPS {int(self.frames / (time.time() - start_time))}, "
-                  f"\n Mean return (train): {returns_avg[-1].item()} \n"
+                  f"\n Mean return (eval): {returns_avg[-1].item()}"
+                  f"\n Mean CPC loss (eval): {eval_cpc_stats.cpc_loss}"
                   )
 
         # --- save models ---
@@ -453,19 +400,20 @@ class MetaLearner:
 
         # --- log some other things ---
 
-        if ((self.iter_idx + 1) % self.args.log_interval == 0) and (train_stats is not None):
+        if ((self.iter_idx + 1) % self.args.log_interval == 0) and (train_policy_stats is not None):
 
+            # POLICY
             self.logger.add('environment/state_max', self.policy_storage.prev_state.max(), self.iter_idx)
             self.logger.add('environment/state_min', self.policy_storage.prev_state.min(), self.iter_idx)
 
             self.logger.add('environment/rew_max', self.policy_storage.rewards_raw.max(), self.iter_idx)
             self.logger.add('environment/rew_min', self.policy_storage.rewards_raw.min(), self.iter_idx)
-            self.logger.add('train_reward/mean', self.policy_storage.rewards_raw.sum(axis=0).mean(), self.iter_idx)
+            self.logger.add('environment/rew_mean', self.policy_storage.rewards_raw.sum(axis=0).mean(), self.iter_idx)
 
-            self.logger.add('policy_losses/value_loss', train_stats[0], self.iter_idx)
-            self.logger.add('policy_losses/action_loss', train_stats[1], self.iter_idx)
-            self.logger.add('policy_losses/dist_entropy', train_stats[2], self.iter_idx)
-            self.logger.add('policy_losses/sum', train_stats[3], self.iter_idx)
+            self.logger.add('policy_losses/value_loss', train_policy_stats[0], self.iter_idx)
+            self.logger.add('policy_losses/action_loss', train_policy_stats[1], self.iter_idx)
+            self.logger.add('policy_losses/dist_entropy', train_policy_stats[2], self.iter_idx)
+            self.logger.add('policy_losses/sum', train_policy_stats[3], self.iter_idx)
 
             self.logger.add('policy/action', run_stats[0].abs().float().mean(), self.iter_idx)
             self.logger.add_hist('policy/action_hist', run_stats[0].abs().flatten(), self.iter_idx)
@@ -474,18 +422,18 @@ class MetaLearner:
             self.logger.add('policy/action_logprob', run_stats[1].mean(), self.iter_idx)
             self.logger.add('policy/value', run_stats[2].mean(), self.iter_idx)
 
-            # self.logger.add('encoder/latent_mean', torch.cat(self.policy_storage.latent_mean).mean(), self.iter_idx)
-            # self.logger.add('encoder/latent_logvar', torch.cat(self.policy_storage.latent_logvar).mean(), self.iter_idx)
-
+            # REPRESENTATION
+            self.log_cpc_stats(stats=train_cpc_stats, log_prefix='train')
+            if train_evaluation_loss is not None:
+                self.log_evaluator_stats(stat=train_evaluation_loss, log_prefix='train')
             # log the average weights and gradients of all models (where applicable)
-            for [model, name] in [
+            models = [
                 [self.policy.actor_critic, 'policy'],
                 [self.cpc_encoder.encoder, 'encoder'],
-                [self.cpc_encoder.mlp, 'cpc_mlp']
-                # [self.vae.reward_decoder, 'reward_decoder'],
-                # [self.vae.state_decoder, 'state_transition_decoder'],
-                # [self.vae.task_decoder, 'task_decoder']
-            ]:
+                [self.cpc_encoder.mlp, 'cpc_mlp']]
+            if self.args.with_action_gru:
+                models += [[self.cpc_encoder.action_gru, 'action_gru']]
+            for [model, name] in models:
                 if model is not None:
                     param_list = list(model.parameters())
                     param_mean = np.mean([param_list[i].data.cpu().numpy().mean() for i in range(len(param_list))])
@@ -493,6 +441,9 @@ class MetaLearner:
                     if name == 'policy':
                         self.logger.add('weights/policy_std', param_list[0].data.mean(), self.iter_idx)
                     if param_list[0].grad is not None:
-                        param_grad_mean = np.mean(
-                            [param_list[i].grad.cpu().numpy().mean() for i in range(len(param_list))])
+                        param_grad_mean = []
+                        for i in range(len(param_list)):
+                            if param_list[i].grad is not None:
+                                param_grad_mean.append(param_list[i].grad.cpu().numpy().mean())
+                        param_grad_mean = np.array(param_grad_mean).mean()
                         self.logger.add('gradients/{}'.format(name), param_grad_mean, self.iter_idx)

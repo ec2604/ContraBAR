@@ -19,7 +19,7 @@ def mujoco_wrapper(entry_point, **kwargs):
     return env
 
 
-class VariBadWrapper(gym.Wrapper):
+class contrabarWrapper(gym.Wrapper):
     def __init__(self,
                  env,
                  episodes_per_task,

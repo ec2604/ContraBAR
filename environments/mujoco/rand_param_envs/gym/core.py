@@ -313,7 +313,7 @@ class Wrapper(Env):
         # Merge with the base metadata
         metadata = self.metadata
         self.metadata = self.env.metadata.copy()
-        self.metadata.update(metadata)
+        self.metadata.meta_update(metadata,,
 
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space

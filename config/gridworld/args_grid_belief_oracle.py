@@ -13,7 +13,7 @@ def get_args(rest_args):
     parser.add_argument('--env_name', default='GridNavi-v0', help='environment to train on')
 
     parser.add_argument('--disable_metalearner', type=boolean_argument, default=True,
-                        help='Train a normal policy without the variBAD architecture')
+                        help='Train a normal policy without the contrabar architecture')
 
     # --- POLICY ---
 

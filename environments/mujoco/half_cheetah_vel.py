@@ -103,7 +103,7 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_state = state.clone()
 
         if hasattr(args, 'hidden_size'):
@@ -134,15 +134,9 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
                 else:
                     episode_prev_obs[episode_idx].append(state.clone())
                 # act
-                _, action = utl.select_action_cpc(args=args,
-                                                 policy=policy,
-                                                 belief=belief,
-                                                 task=task,
-                                                 deterministic=True,
-                                                 state=state,
-                                                 hidden_latent=current_hidden_state.squeeze(0)
-                                                 )
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.reshape((1, -1)).float().to(device)
 
                 # keep track of position
@@ -152,7 +146,7 @@ class HalfCheetahVelEnv(HalfCheetahEnv):
                     # update task embedding
                     current_hidden_state = encoder(
                         action.reshape(1, -1).float().to(device), state, rew.reshape(1, -1).float().to(device),
-                        hidden_state, return_prior=False)
+                        current_hidden_state, return_prior=False)
 
                     episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
@@ -234,7 +228,7 @@ class HalfCheetahVelWindEnv(HalfCheetahEnv):
         self.set_task(self.sample_tasks(1)[0])
         self._max_episode_steps = max_episode_steps
         self.task_dim = 1
-        self.wind = np.array([random.random() * 0.05])
+        self.wind = np.array([random.random() * 0.1])
         super(HalfCheetahVelWindEnv, self).__init__()
 
     def step(self, action):
@@ -262,8 +256,8 @@ class HalfCheetahVelWindEnv(HalfCheetahEnv):
     def set_task(self, task):
         if isinstance(task, np.ndarray):
             task = task[0]
-        self.goal_velocity = task
-        self.wind = np.array([random.random() * 0.05])
+        self.goal_velocity = CONSTANT_VELOCITY
+        self.wind = np.array([random.random() * 0.1])
         # self.wind = np.array([0.1])
 
     def get_task(self):
@@ -315,7 +309,7 @@ class HalfCheetahVelWindEnv(HalfCheetahEnv):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_state = state.clone()
         start_img = self.render('rgb_array', 512, 512)
 
@@ -349,15 +343,9 @@ class HalfCheetahVelWindEnv(HalfCheetahEnv):
                     episode_prev_obs[episode_idx].append(state.clone())
                     episode_prev_img[episode_idx].append(state_img.copy())
                 # act
-                _, action = utl.select_action_cpc(args=args,
-                                                 policy=policy,
-                                                 belief=belief,
-                                                 task=task,
-                                                 deterministic=True,
-                                                 state=state,
-                                                 hidden_latent=current_hidden_state.squeeze(0)
-                                                 )
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.reshape((1, -1)).float().to(device)
                 state_img = self.render('rgb_array', 512, 512)
                 # keep track of position

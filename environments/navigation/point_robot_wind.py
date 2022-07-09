@@ -130,7 +130,7 @@ class PointEnv(Env):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_obs_raw = state.clone()
         task = task.view(-1) if task is not None else None
 
@@ -175,10 +175,9 @@ class PointEnv(Env):
                                                    latent_sample=curr_latent_sample,
                                                    latent_mean=curr_latent_mean,
                                                    latent_logvar=curr_latent_logvar)
-                _, action = policy.act(state=state.view(-1), latent=latent, belief=belief, task=task,
-                                       deterministic=True)
+                _, action = policy.act(state=state.view(-1), latent=latent, task=task, deterministic=True)
 
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.float().reshape((1, -1)).to(device)
                 task = task.view(-1) if task is not None else None
 
@@ -390,7 +389,7 @@ class PointEnvWind(Env):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_obs_raw = state.clone()
         task = task.view(-1) if task is not None else None
 
@@ -423,16 +422,10 @@ class PointEnvWind(Env):
                 else:
                     episode_prev_obs[episode_idx].append(state.clone())
                     # act
-                _, action = utl.select_action_cpc(args=args,
-                                                  policy=policy,
-                                                  belief=belief,
-                                                  task=task,
-                                                  deterministic=True,
-                                                  state=state,
-                                                  hidden_latent=current_hidden_state.squeeze(0)
-                                                  )
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
 
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.float().reshape((1, -1)).to(device)
                 task = task.view(-1) if task is not None else None
 

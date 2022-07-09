@@ -86,8 +86,7 @@ class A2C:
                                                      )
 
             values, action_log_probs, dist_entropy = \
-                self.actor_critic.evaluate_actions(state=state_batch, latent=latent_batch,
-                                                   belief=belief_batch, task=task_batch,
+                self.actor_critic.evaluate_actions(state=state_batch, latent=latent_batch, task=task_batch,
                                                    action=actions_batch)
 
             # --  UPDATE --
@@ -120,7 +119,7 @@ class A2C:
                 self.optimiser_vae.step()
 
         if (not rlloss_through_encoder) and (self.optimiser_vae is not None):
-            for _ in range(self.args.num_vae_updates):
+            for _ in range(self.args.num_representation_learner_updates):
                 compute_vae_loss(update=True)
 
         if self.lr_scheduler_policy is not None:
@@ -131,4 +130,4 @@ class A2C:
         return value_loss, action_loss, dist_entropy, loss
 
     def act(self, state, latent, belief, task, deterministic=False):
-        return self.actor_critic.act(state=state, latent=latent, belief=belief, task=task, deterministic=deterministic)
+        return self.actor_critic.act(state=state, latent=latent, task=task, deterministic=deterministic)

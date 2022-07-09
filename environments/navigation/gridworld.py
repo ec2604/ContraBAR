@@ -241,7 +241,7 @@ class GridNavi(gym.Env):
         # --- roll out policy ---
 
         env.reset_task()
-        [state, belief, task] = utl.reset_env(env, args)
+        [state, task] = utl.reset_env(env, args)
         start_obs = state.clone()
 
         for episode_idx in range(args.max_rollouts_per_task):
@@ -271,18 +271,12 @@ class GridNavi(gym.Env):
 
                 # act
 
-                _, action = utl.select_action_cpc(args=args,
-                                                 policy=policy,
-                                                 belief=belief,
-                                                 task=task,
-                                                 deterministic=True,
-                                                 state=state,
-                                                 hidden_latent=current_hidden_state.squeeze(0)
-                                                 )
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
 
 
                 # observe reward and next obs
-                [state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(env, action, args)
+                [state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(env, action, args)
 
                 if encoder is not None:
                     # update task embedding

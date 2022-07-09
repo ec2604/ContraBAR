@@ -43,21 +43,20 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #         save_obj(obs_rms, save_path, "env_obs_rms{0}.pkl".format(iter_idx))
 
 
-def reset_env(env, args, indices=None, state=None):
+def reset_env(env, args, indices=None, state=None, **kwargs):
     """ env can be many environments or just one """
     # reset all environments
     if (indices is None) or (len(indices) == args.num_processes):
-        state = env.reset().float().to(device)
+        state = env.reset(**kwargs).float().to(device)
     # reset only the ones given by indices
     else:
         assert state is not None
         for i in indices:
             state[i] = env.reset(index=i)
 
-    belief = torch.from_numpy(env.get_belief()).float().to(device) if args.pass_belief_to_policy else None
     task = torch.from_numpy(env.get_task()).float().to(device)# if args.pass_task_to_policy else None
         
-    return state, belief, task
+    return state, task
 
 
 def squash_action(action, args):
@@ -80,21 +79,14 @@ def env_step(env, action, args):
     else:
         reward = reward.to(device)
 
-    belief = torch.from_numpy(env.get_belief()).float().to(device) if args.pass_belief_to_policy else None
     task = torch.from_numpy(env.get_task()).float().to(device)# if (args.pass_task_to_policy or args.decode_task) else None
 
-    return [next_obs, belief, task], reward, done, infos
+    return [next_obs, task], reward, done, infos
 
 
-def select_action_cpc(args,
-                  policy,
-                  deterministic,
-                  hidden_latent,
-                  state=None,
-                  belief=None,
-                  task=None):
+def select_action_cpc(args, policy, deterministic, hidden_latent, state=None, task=None):
     """ Select action using the policy. """
-    action = policy.act(state=state, latent=hidden_latent, belief=belief, task=task, deterministic=deterministic)
+    action = policy.act(state=state, latent=hidden_latent, task=task, deterministic=deterministic)
     if isinstance(action, list) or isinstance(action, tuple):
         value, action = action
     else:
@@ -102,60 +94,6 @@ def select_action_cpc(args,
     action = action.to(device)
     return value, action
 
-def select_action(args,
-                  policy,
-                  deterministic,
-                  state=None,
-                  belief=None,
-                  task=None,
-                  latent_sample=None, latent_mean=None, latent_logvar=None):
-    """ Select action using the policy. """
-    latent = get_latent_for_policy(args=args, latent_sample=latent_sample, latent_mean=latent_mean,
-                                   latent_logvar=latent_logvar)
-    action = policy.act(state=state, latent=latent, belief=belief, task=task, deterministic=deterministic)
-    if isinstance(action, list) or isinstance(action, tuple):
-        value, action = action
-    else:
-        value = None
-    action = action.to(device)
-    return value, action
-
-
-def get_latent_for_policy(args, latent_sample=None, latent_mean=None, latent_logvar=None):
-
-    if (latent_sample is None) and (latent_mean is None) and (latent_logvar is None):
-        return None
-
-    if args.add_nonlinearity_to_latent:
-        latent_sample = F.relu(latent_sample)
-        latent_mean = F.relu(latent_mean)
-        latent_logvar = F.relu(latent_logvar)
-
-    if args.sample_embeddings:
-        latent = latent_sample
-    else:
-        latent = torch.cat((latent_mean, latent_logvar), dim=-1)
-
-    if latent.shape[0] == 1:
-        latent = latent.squeeze(0)
-
-    return latent
-
-def update_encoding(encoder, next_obs, action, reward, done, hidden_state):
-    # reset hidden state of the recurrent net when we reset the task
-    if done is not None:
-        hidden_state = encoder.reset_hidden(hidden_state, done)
-
-    with torch.no_grad():
-        latent_sample, latent_mean, latent_logvar, hidden_state = encoder(actions=action.float(),
-                                                                          states=next_obs,
-                                                                          rewards=reward,
-                                                                          hidden_state=hidden_state,
-                                                                          return_prior=False)
-
-    # TODO: move the sampling out of the encoder!
-
-    return latent_sample, latent_mean, latent_logvar, hidden_state
 
 def update_encoding_cpc(encoder, next_obs, action, reward, done, hidden_state):
     # reset hidden state of the recurrent net when we reset the task
@@ -196,59 +134,6 @@ def update_linear_schedule(optimizer, epoch, total_num_epochs, initial_lr):
         param_group['lr'] = lr
 
 
-def recompute_embeddings(
-        policy_storage,
-        encoder,
-        sample,
-        update_idx,
-        detach_every
-):
-    # get the prior
-    latent_sample = [policy_storage.latent_samples[0].detach().clone()]
-    latent_mean = [policy_storage.latent_mean[0].detach().clone()]
-    latent_logvar = [policy_storage.latent_logvar[0].detach().clone()]
-
-    latent_sample[0].requires_grad = True
-    latent_mean[0].requires_grad = True
-    latent_logvar[0].requires_grad = True
-
-    # loop through experience and update hidden state
-    # (we need to loop because we sometimes need to reset the hidden state)
-    h = policy_storage.hidden_states[0].detach()
-    for i in range(policy_storage.actions.shape[0]):
-        # reset hidden state of the GRU when we reset the task
-        h = encoder.reset_hidden(h, policy_storage.done[i + 1])
-
-        ts, tm, tl, h = encoder(policy_storage.actions.float()[i:i + 1],
-                                policy_storage.next_state[i:i + 1],
-                                policy_storage.rewards_raw[i:i + 1],
-                                h,
-                                sample=sample,
-                                return_prior=False,
-                                detach_every=detach_every
-                                )
-
-        # print(i, reset_task.sum())
-        # print(i, (policy_storage.latent_mean[i + 1] - tm).sum())
-        # print(i, (policy_storage.latent_logvar[i + 1] - tl).sum())
-        # print(i, (policy_storage.hidden_states[i + 1] - h).sum())
-
-        latent_sample.append(ts)
-        latent_mean.append(tm)
-        latent_logvar.append(tl)
-
-    if update_idx == 0:
-        try:
-            assert (torch.cat(policy_storage.latent_mean) - torch.cat(latent_mean)).sum() == 0
-            assert (torch.cat(policy_storage.latent_logvar) - torch.cat(latent_logvar)).sum() == 0
-        except AssertionError:
-            warnings.warn('You are not recomputing the embeddings correctly!')
-            import pdb
-            pdb.set_trace()
-
-    policy_storage.latent_samples = latent_sample
-    policy_storage.latent_mean = latent_mean
-    policy_storage.latent_logvar = latent_logvar
 
 
 class FeatureExtractor(nn.Module):

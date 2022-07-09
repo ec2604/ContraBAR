@@ -74,7 +74,7 @@ class HalfCheetahVelEnvImage(HalfCheetahEnv):
     def set_task(self, task):
         if isinstance(task, np.ndarray):
             task = task[0]
-        self.goal_velocity = task
+        self.goal_velocity = CONSTANT_VELOCITY
         self.wind = np.array([random.random() * 0.1])
 
     def get_task(self):
@@ -94,7 +94,7 @@ class HalfCheetahVelEnvImage(HalfCheetahEnv):
     def reset(self, again=True):
         """
         Reset the environment. This should *NOT* reset the task!
-        Resetting the task is handled in the varibad wrapper (see wrappers.py).
+        Resetting the task is handled in the contrabar wrapper (see wrappers.py).
         """
         self.set_state(self.init_qpos, self.init_qvel)
         if again:
@@ -140,7 +140,7 @@ class HalfCheetahVelEnvImage(HalfCheetahEnv):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_state = state.clone()
 
         if hasattr(args, 'hidden_size'):
@@ -174,15 +174,9 @@ class HalfCheetahVelEnvImage(HalfCheetahEnv):
                     episode_prev_obs[episode_idx].append(state.clone())
                     episode_prev_img[episode_idx].append(state_img.copy())
                 # act
-                _, action = utl.select_action_cpc(args=args,
-                                                 policy=policy,
-                                                 belief=belief,
-                                                 task=task,
-                                                 deterministic=True,
-                                                 state=state,
-                                                 hidden_latent=current_hidden_state.squeeze(0)
-                                                 )
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.float().to(device)
                 state_img = self.render('rgb_array', 512, 512)
 
@@ -193,7 +187,7 @@ class HalfCheetahVelEnvImage(HalfCheetahEnv):
                     # update task embedding
                     current_hidden_state = encoder(
                         action.reshape(1, -1).float().to(device), state, rew.reshape(1, -1).float().to(device),
-                        hidden_state, return_prior=False)
+                        current_hidden_state, return_prior=False)
 
                     episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
@@ -235,7 +229,7 @@ class HalfCheetahVelEnvImage(HalfCheetahEnv):
             # (not plotting the last step because this gives weird artefacts)
             plt.plot(range(len(episode_next_vel[i][:-1])), episode_next_vel[i][:-1])
             plt.axhline(CONSTANT_VELOCITY, 0, len(episode_next_vel[i][:-1]), color='k', linestyle='--')
-            plt.title('task: {}'.format(task.detach().cpu().numpy()[0]), fontsize=15)
+            plt.title(f'task: {task.detach().cpu().numpy()[0]}, reward: {episode_rewards[i].sum()}', fontsize=15)
             plt.ylabel('velocity (ep {})'.format(i), fontsize=15)
             if i == num_episodes - 1:
                 plt.xlabel('steps', fontsize=15)

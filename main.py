@@ -23,7 +23,7 @@ from config.mujoco import \
     args_ant_goal_humplik, \
     args_walker_multitask, args_walker_expert, args_walker_avg, args_walker_rl2, args_walker_varibad, \
     args_humanoid_dir_varibad, args_humanoid_dir_rl2, args_humanoid_dir_multitask, args_humanoid_dir_expert, \
-    args_ant_goal_image_varibad
+    args_ant_goal_image_varibad, args_sparse_ant_goal_image_varibad
 from config.dm_control import args_reacher_varibad, args_sparse_reacher_varibad
 from config.procgen import args_procgen_maze
 from environments.parallel_envs import make_vec_envs
@@ -107,6 +107,8 @@ def main():
         args = args_ant_goal_varibad.get_args(rest_args)
     elif env == 'ant_goal_image_varibad':
         args = args_ant_goal_image_varibad.get_args(rest_args)
+    elif env == 'sparse_ant_goal_image_varibad':
+        args = args_sparse_ant_goal_image_varibad.get_args(rest_args)
     elif env == 'ant_goal_humplik':
         args = args_ant_goal_humplik.get_args(rest_args)
     elif env == 'ant_goal_rl2':
@@ -166,16 +168,7 @@ def main():
         assert np.unique(envs.action_space.low) == [-1]
         assert np.unique(envs.action_space.high) == [1]
 
-    # clean up arguments
-    if args.disable_metalearner or args.disable_decoder:
-        args.decode_reward = False
-        args.decode_state = False
-        args.decode_task = False
 
-    if hasattr(args, 'decode_only_past') and args.decode_only_past:
-        args.split_batches_by_elbo = True
-    # if hasattr(args, 'vae_subsample_decodes') and args.vae_subsample_decodes:
-    #     args.split_batches_by_elbo = True
 
     # begin training (loop through all passed seeds)
     seed_list = [args.seed] if isinstance(args.seed, int) else args.seed

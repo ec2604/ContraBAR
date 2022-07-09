@@ -13,7 +13,7 @@ def get_args(rest_args):
     parser.add_argument('--env_name', default='HalfCheetahVel-v0', help='environment to train on')
 
     parser.add_argument('--disable_metalearner', type=boolean_argument, default=True,
-                        help='Train a normal policy without the variBAD architecture')
+                        help='Train a normal policy without the contrabar architecture')
     parser.add_argument('--single_task_mode', type=boolean_argument, default=False,
                         help='train policy on one (randomly chosen) environment only')
 
@@ -22,7 +22,6 @@ def get_args(rest_args):
     # what to pass to the policy (note this is after the encoder)
     parser.add_argument('--pass_state_to_policy', type=boolean_argument, default=True, help='condition policy on state')
     parser.add_argument('--pass_latent_to_policy', type=boolean_argument, default=False, help='condition policy on VAE latent')
-    parser.add_argument('--pass_belief_to_policy', type=boolean_argument, default=False, help='condition policy on ground-truth belief')
     parser.add_argument('--pass_task_to_policy', type=boolean_argument, default=True, help='condition policy on ground-truth task description')
 
     # using separate encoders for the different inputs ("None" uses no encoder)
@@ -34,7 +33,6 @@ def get_args(rest_args):
     # normalising (inputs/rewards/outputs)
     parser.add_argument('--norm_state_for_policy', type=boolean_argument, default=True, help='normalise state input')
     parser.add_argument('--norm_latent_for_policy', type=boolean_argument, default=True, help='normalise latent input')
-    parser.add_argument('--norm_belief_for_policy', type=boolean_argument, default=True, help='normalise belief input')
     parser.add_argument('--norm_task_for_policy', type=boolean_argument, default=False, help='normalise task input')
     parser.add_argument('--norm_rew_for_policy', type=boolean_argument, default=True, help='normalise rew for RL train')
     parser.add_argument('--norm_actions_pre_sampling', type=boolean_argument, default=False, help='normalise policy output')

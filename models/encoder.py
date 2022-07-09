@@ -395,7 +395,7 @@ class ImageEncoder(nn.Module):
             out = torch.relu(conv(out))
         out = out.view(input.shape[0], -1)
         out = self.fc(out)
-        out = torch.tanh(out)
+        # out = torch.tanh(out)
         return out
 
 # class ImageEncoder(nn.Module):

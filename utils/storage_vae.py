@@ -4,9 +4,10 @@ import torch
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class RolloutStorageVAE(object):
+class RolloutStorage(object):
     def __init__(self, num_processes, max_trajectory_len, zero_pad, max_num_rollouts,
-                 state_dim, action_dim, vae_buffer_add_thresh, task_dim):
+                 state_dim, action_dim, representation_learner_buffer_add_thresh, task_dim,
+                 underlying_state_dim=0):
         """
         Store everything that is needed for the VAE update
         :param num_processes:
@@ -15,8 +16,9 @@ class RolloutStorageVAE(object):
         self.obs_dim = state_dim
         self.action_dim = action_dim
         self.task_dim = task_dim
+        self.underlying_state_dim = underlying_state_dim
 
-        self.vae_buffer_add_thresh = vae_buffer_add_thresh  # prob of adding new trajectories
+        self.representation_learner_buffer_add_thresh = representation_learner_buffer_add_thresh  # prob of adding new trajectories
         self.max_buffer_size = max_num_rollouts  # maximum buffer len (number of trajectories)
         self.insert_idx = 0  # at which index we're currently inserting new data
         self.buffer_len = 0  # how much of the buffer has been filled
@@ -32,6 +34,7 @@ class RolloutStorageVAE(object):
             self.next_state = torch.zeros((self.max_traj_len, self.max_buffer_size, *state_dim))
             self.actions = torch.zeros((self.max_traj_len, self.max_buffer_size, action_dim))
             self.rewards = torch.zeros((self.max_traj_len, self.max_buffer_size, 1))
+            self.underlying_states = torch.zeros((self.max_traj_len, self.max_buffer_size, self.underlying_state_dim))
             self.tasks = torch.zeros((self.max_buffer_size, task_dim))
             self.trajectory_lens = [0] * self.max_buffer_size
 
@@ -47,7 +50,10 @@ class RolloutStorageVAE(object):
             self.running_tasks = torch.zeros((num_processes, task_dim)).to(device)
         else:
             self.running_tasks = None
-
+        if self.underlying_state_dim != 0:
+            self.running_underlying_states = torch.zeros((self.max_traj_len, num_processes, self.underlying_state_dim)).to(device)
+        else:
+            self.running_underlying_states = None
     def get_running_batch(self):
         """
         Returns the batch of data from the current running environments
@@ -56,7 +62,7 @@ class RolloutStorageVAE(object):
         """
         return self.running_prev_state, self.running_next_state, self.running_actions, self.running_rewards, self.curr_timestep
 
-    def insert(self, prev_state, actions, next_state, rewards, done, task):
+    def insert(self, prev_state, actions, next_state, rewards, done, task, underlying_state):
 
         # add to temporary buffer
 
@@ -68,6 +74,8 @@ class RolloutStorageVAE(object):
             self.running_actions[self.curr_timestep[0]] = actions
             if task is not None:
                 self.running_tasks = task
+            if underlying_state is not None:
+                self.running_underlying_states[self.curr_timestep[0]] = underlying_state
             self.curr_timestep += 1
             already_inserted = True
 
@@ -76,7 +84,7 @@ class RolloutStorageVAE(object):
 
             # add to permanent (up to max_buffer_len) buffer
             if self.max_buffer_size > 0:
-                if self.vae_buffer_add_thresh >= np.random.uniform(0, 1):
+                if self.representation_learner_buffer_add_thresh >= np.random.uniform(0, 1):
                     # check where to insert data
                     if self.insert_idx + self.num_processes > self.max_buffer_size:
                         # keep track of how much we filled the buffer (for sampling from it)
@@ -92,6 +100,8 @@ class RolloutStorageVAE(object):
                     self.next_state[:, self.insert_idx:self.insert_idx + self.num_processes] = self.running_next_state
                     self.actions[:, self.insert_idx:self.insert_idx+self.num_processes] = self.running_actions
                     self.rewards[:, self.insert_idx:self.insert_idx+self.num_processes] = self.running_rewards
+                    if self.underlying_state_dim != 0:
+                        self.underlying_states[:, self.insert_idx:self.insert_idx+self.num_processes] = self.running_underlying_states
                     if (self.tasks is not None) and (self.running_tasks is not None):
                         insert_shape = self.tasks[self.insert_idx:self.insert_idx+self.num_processes].shape
                         self.tasks[self.insert_idx:self.insert_idx+self.num_processes] = self.running_tasks.reshape(insert_shape)
@@ -107,6 +117,8 @@ class RolloutStorageVAE(object):
             self.running_actions *= 0
             if self.running_tasks is not None:
                 self.running_tasks *= 0
+            if self.underlying_state_dim != 0:
+                self.running_underlying_states *= 0
             self.curr_timestep *= 0
 
             already_reset = True
@@ -122,6 +134,8 @@ class RolloutStorageVAE(object):
                     self.running_actions[self.curr_timestep[i], i] = actions[i]
                     if self.running_tasks is not None:
                         self.running_tasks[i] = task[i]
+                    if self.underlying_state_dim != 0:
+                        self.running_underlying_states[self.curr_timestep[i], i] = underlying_state[i]
                     self.curr_timestep[i] += 1
 
                 if not already_reset:
@@ -130,7 +144,7 @@ class RolloutStorageVAE(object):
 
                         # add to permanent (up to max_buffer_len) buffer
                         if self.max_buffer_size > 0:
-                            if self.vae_buffer_add_thresh >= np.random.uniform(0, 1):
+                            if self.representation_learner_buffer_add_thresh >= np.random.uniform(0, 1):
                                 # check where to insert data
                                 if self.insert_idx + 1 > self.max_buffer_size:
                                     # keep track of how much we filled the buffer (for sampling from it)
@@ -148,6 +162,8 @@ class RolloutStorageVAE(object):
                                 self.rewards[:, self.insert_idx] = self.running_rewards[:, i].to('cpu')
                                 if self.tasks is not None:
                                     self.tasks[self.insert_idx] = self.running_tasks[i].to('cpu')
+                                if self.underlying_state_dim != 0:
+                                    self.underlying_states[self.insert_idx] = self.running_underlying_states[i].to('cpu')
                                 self.trajectory_lens[self.insert_idx] = self.curr_timestep[i].clone()
                                 self.insert_idx += 1
 
@@ -158,6 +174,8 @@ class RolloutStorageVAE(object):
                         self.running_actions[:, i] *= 0
                         if self.running_tasks is not None:
                             self.running_tasks[i] *= 0
+                        if self.underlying_state_dim != 0:
+                            self.running_underlying_states[:, i] *= 0
                         self.curr_timestep[i] = 0
 
     def ready_for_update(self):
@@ -167,7 +185,7 @@ class RolloutStorageVAE(object):
         return self.buffer_len
 
     def get_num_sampled(self):
-        return self.num_sampled.sum() / self.buffer_len
+        return self.num_sampled[self.num_sampled > 0] .mean()
 
     def get_batch(self, batchsize=5, replace=False):
         # TODO: check if we can get rid of num_enc_len and num_rollouts (call it batchsize instead)
@@ -185,10 +203,14 @@ class RolloutStorageVAE(object):
         next_obs = self.next_state[:, rollout_indices, :]
         actions = self.actions[:, rollout_indices, :]
         rewards = self.rewards[:, rollout_indices, :]
+        if self.underlying_state_dim != 0:
+            underlying_states = self.underlying_states[:, rollout_indices, :].to(device)
+        else:
+            underlying_states = None
         if self.tasks is not None:
             tasks = self.tasks[rollout_indices].to(device)
         else:
             tasks = None
 
         return prev_obs.to(device), next_obs.to(device), actions.to(device), \
-               rewards.to(device), tasks, trajectory_lens, self.get_num_sampled()
+               rewards.to(device), tasks, underlying_states, trajectory_lens, self.get_num_sampled()

@@ -3,7 +3,7 @@ import random
 import numpy as np
 
 from environments.mujoco.ant import AntEnv
-
+import torch
 
 class AntGoalEnv(AntEnv):
     def __init__(self, max_episode_steps=50):
@@ -26,7 +26,7 @@ class AntGoalEnv(AntEnv):
         contact_cost = 0.5 * 1e-3 * np.sum(
             np.square(np.clip(self.sim.data.cfrc_ext, -1, 1)))
         survive_reward = 0.0
-        reward = goal_reward# - ctrl_cost - contact_cost + survive_reward
+        reward = goal_reward - ctrl_cost - contact_cost + survive_reward
         #reward = goal_reward - ctrl_cost
         state = self.state_vector()
         done = False
@@ -51,7 +51,7 @@ class AntGoalEnv(AntEnv):
         self.goal_pos = task
 
     def get_task(self):
-        return np.array(self.goal_pos)
+        return self.goal_pos
 
     def _get_obs(self):
         return np.concatenate([

@@ -67,7 +67,7 @@ class HalfCheetahEnv(HalfCheetahEnv_):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_state = state.clone()
 
         if hasattr(args, 'hidden_size'):
@@ -98,15 +98,9 @@ class HalfCheetahEnv(HalfCheetahEnv_):
                 else:
                     episode_prev_obs[episode_idx].append(state.clone())
                 # act
-                _, action = utl.select_action_cpc(args=args,
-                                                 policy=policy,
-                                                 belief=belief,
-                                                 task=task,
-                                                 deterministic=True,
-                                                 state=state,
-                                                 hidden_latent=current_hidden_state.squeeze(0)
-                                                 )
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 state = state.reshape((1, -1)).float().to(device)
 
                 # keep track of position

@@ -214,9 +214,7 @@ class OnlineStorage(object):
                                                self.latent_mean[:-1]) if self.latent_mean is not None else None,
                                            latent_logvar=torch.stack(
                                                self.latent_logvar[:-1]) if self.latent_mean is not None else None)
-        _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
-                                                         latent,
-                                                         self.beliefs[:-1] if self.beliefs is not None else None,
+        _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1], latent,
                                                          self.tasks[:-1] if self.tasks is not None else None,
                                                          self.actions)
         self.action_log_probs = action_log_probs.detach()
@@ -281,13 +279,12 @@ class OnlineStorage(object):
 class CPCOnlineStorage(object):
     def __init__(self,
                  args, num_steps, num_processes,
-                 state_dim, belief_dim, task_dim,
+                 state_dim, task_dim,
                  action_space,
                  hidden_size, latent_dim, normalise_rewards):
 
         self.args = args
         self.state_dim = state_dim
-        self.belief_dim = belief_dim
         self.task_dim = task_dim
 
         self.num_steps = num_steps  # how many steps to do per update (= size of online buffer)
@@ -308,10 +305,6 @@ class CPCOnlineStorage(object):
         # next_state will include s_N when state was reset, skipping s_0
         # (only used if we need to re-compute embeddings after backpropagating RL loss through encoder)
         self.next_state = torch.zeros(num_steps, num_processes, *state_dim)
-        if self.args.pass_belief_to_policy:
-            self.beliefs = torch.zeros(num_steps + 1, num_processes, belief_dim)
-        else:
-            self.beliefs = None
         if self.args.pass_task_to_policy:
             self.tasks = torch.zeros(num_steps + 1, num_processes, task_dim)
         else:
@@ -347,8 +340,6 @@ class CPCOnlineStorage(object):
         if self.args.pass_latent_to_policy:
             self.hidden_states = self.hidden_states.to(device)
             self.next_state = self.next_state.to(device)
-        if self.args.pass_belief_to_policy:
-            self.beliefs = self.beliefs.to(device)
         if self.args.pass_task_to_policy:
             self.tasks = self.tasks.to(device)
         self.rewards_raw = self.rewards_raw.to(device)
@@ -360,26 +351,9 @@ class CPCOnlineStorage(object):
         self.returns = self.returns.to(device)
         self.actions = self.actions.to(device)
 
-    def insert(self,
-               state,
-               belief,
-               task,
-               actions,
-               rewards_raw,
-               rewards_normalised,
-               value_preds,
-               masks,
-               bad_masks,
-               done,
-               #
-               hidden_states=None,
-               latent_sample=None,
-               latent_mean=None,
-               latent_logvar=None,
-               ):
+    def insert(self, state, task, actions, rewards_raw, rewards_normalised, value_preds, masks, bad_masks, done,
+               hidden_states=None):
         self.prev_state[self.step + 1].copy_(state)
-        if self.args.pass_belief_to_policy:
-            self.beliefs[self.step + 1].copy_(belief)
         if self.args.pass_task_to_policy:
             self.tasks[self.step + 1].copy_(task)
         if self.args.pass_latent_to_policy:
@@ -398,8 +372,6 @@ class CPCOnlineStorage(object):
 
     def after_update(self):
         self.prev_state[0].copy_(self.prev_state[-1])
-        if self.args.pass_belief_to_policy:
-            self.beliefs[0].copy_(self.beliefs[-1])
         if self.args.pass_task_to_policy:
             self.tasks[0].copy_(self.tasks[-1])
         if self.args.pass_latent_to_policy:
@@ -453,9 +425,7 @@ class CPCOnlineStorage(object):
         return len(self.prev_state) * self.num_processes
 
     def before_update(self, policy):
-        _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1],
-                                                         self.hidden_states[:-1],
-                                                         self.beliefs[:-1] if self.beliefs is not None else None,
+        _, action_log_probs, _ = policy.evaluate_actions(self.prev_state[:-1], self.hidden_states[:-1],
                                                          self.tasks[:-1] if self.tasks is not None else None,
                                                          self.actions)
         self.action_log_probs = action_log_probs.detach()
@@ -489,10 +459,6 @@ class CPCOnlineStorage(object):
                 hidden_batch = self.hidden_states[:-1].reshape(-1, *self.hidden_states.size()[2:])[indices]
             else:
                 hidden_batch = None
-            if self.args.pass_belief_to_policy:
-                belief_batch = self.beliefs[:-1].reshape(-1, *self.beliefs.size()[2:])[indices]
-            else:
-                belief_batch = None
             if self.args.pass_task_to_policy:
                 task_batch = self.tasks[:-1].reshape(-1, *self.tasks.size()[2:])[indices]
             else:
@@ -509,5 +475,5 @@ class CPCOnlineStorage(object):
             else:
                 adv_targ = advantages.reshape(-1, 1)[indices]
 
-            yield state_batch, belief_batch, task_batch, actions_batch, hidden_batch, value_preds_batch, \
+            yield state_batch, task_batch, actions_batch, hidden_batch, value_preds_batch, \
                   return_batch, old_action_log_probs_batch, adv_targ

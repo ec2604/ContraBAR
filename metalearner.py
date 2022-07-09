@@ -13,14 +13,14 @@ from models.policy import Policy
 from utils import evaluation as utl_eval
 from utils import helpers as utl
 from utils.tb_logger import TBLogger
-from vae import VaribadVAE
+from vae import contrabarVAE
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class MetaLearner:
     """
-    Meta-Learner class with the main training loop for variBAD.
+    Meta-Learner class with the main training loop for contrabar.
     """
     def __init__(self, args):
 
@@ -79,7 +79,7 @@ class MetaLearner:
             self.args.action_dim = self.envs.action_space.shape[0]
 
         # initialise VAE and policy
-        self.vae = VaribadVAE(self.args, self.logger, lambda: self.iter_idx)
+        self.vae = contrabarVAE(self.args, self.logger, lambda: self.iter_idx)
         self.policy_storage = self.initialise_policy_storage()
         self.policy = self.initialise_policy()
 
@@ -99,25 +99,14 @@ class MetaLearner:
     def initialise_policy(self):
 
         # initialise policy network
-        policy_net = Policy(
-            args=self.args,
-            #
-            pass_state_to_policy=self.args.pass_state_to_policy,
-            pass_latent_to_policy=self.args.pass_latent_to_policy,
-            pass_belief_to_policy=self.args.pass_belief_to_policy,
-            pass_task_to_policy=self.args.pass_task_to_policy,
-            dim_state=self.args.state_dim,
-            dim_latent=self.args.latent_dim * 2,
-            dim_belief=self.args.belief_dim,
-            dim_task=self.args.task_dim,
-            #
-            hidden_layers=self.args.policy_layers,
-            activation_function=self.args.policy_activation_function,
-            policy_initialisation=self.args.policy_initialisation,
-            #
-            action_space=self.envs.action_space,
-            init_std=self.args.policy_init_std,
-        ).to(device)
+        policy_net = Policy(args=self.args, pass_state_to_policy=self.args.pass_state_to_policy,
+                            pass_latent_to_policy=self.args.pass_latent_to_policy,
+                            pass_task_to_policy=self.args.pass_task_to_policy, dim_state=self.args.state_dim,
+                            dim_latent=self.args.latent_dim * 2, dim_task=self.args.task_dim,
+                            hidden_layers=self.args.policy_layers,
+                            activation_function=self.args.policy_activation_function,
+                            policy_initialisation=self.args.policy_initialisation, action_space=self.envs.action_space,
+                            init_std=self.args.policy_init_std).to(device)
 
         # initialise policy trainer
         if self.args.policy == 'a2c':
@@ -129,28 +118,18 @@ class MetaLearner:
                 policy_optimiser=self.args.policy_optimiser,
                 policy_anneal_lr=self.args.policy_anneal_lr,
                 train_steps=self.num_updates,
-                optimiser_vae=self.vae.optimiser_vae,
+                optimiser_vae=self.vae.optimizer_representation_learner,
                 lr=self.args.lr_policy,
                 eps=self.args.policy_eps,
             )
         elif self.args.policy == 'ppo':
-            policy = PPO(
-                self.args,
-                policy_net,
-                self.args.policy_value_loss_coef,
-                self.args.policy_entropy_coef,
-                policy_optimiser=self.args.policy_optimiser,
-                policy_anneal_lr=self.args.policy_anneal_lr,
-                train_steps=self.num_updates,
-                lr=self.args.lr_policy,
-                eps=self.args.policy_eps,
-                ppo_epoch=self.args.ppo_num_epochs,
-                num_mini_batch=self.args.ppo_num_minibatch,
-                use_huber_loss=self.args.ppo_use_huberloss,
-                use_clipped_value_loss=self.args.ppo_use_clipped_value_loss,
-                clip_param=self.args.ppo_clip_param,
-                optimiser_vae=self.vae.optimiser_vae,
-            )
+            policy = PPO(self.args, policy_net, self.args.policy_value_loss_coef, self.args.policy_entropy_coef,
+                         policy_optimiser=self.args.policy_optimiser, policy_anneal_lr=self.args.policy_anneal_lr,
+                         train_steps=self.num_updates, optimizer_representation_learner=self.vae.optimizer_representation_learner,
+                         lr=self.args.lr_policy, clip_param=self.args.ppo_clip_param,
+                         ppo_epoch=self.args.ppo_num_epochs, num_mini_batch=self.args.ppo_num_minibatch,
+                         eps=self.args.policy_eps, use_huber_loss=self.args.ppo_use_huberloss,
+                         use_clipped_value_loss=self.args.ppo_use_clipped_value_loss)
         else:
             raise NotImplementedError
 
@@ -161,7 +140,7 @@ class MetaLearner:
         start_time = time.time()
 
         # reset environments
-        prev_state, belief, task = utl.reset_env(self.envs, self.args)
+        prev_state, task = utl.reset_env(self.envs, self.args)
 
         # insert initial observation / embeddings to rollout storage
         self.policy_storage.prev_state[0].copy_(prev_state)
@@ -201,7 +180,7 @@ class MetaLearner:
                     )
 
                 # take step in the environment
-                [next_state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, 0*action, self.args)
+                [next_state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, 0*action, self.args)
 
                 done = torch.from_numpy(np.array(done, dtype=int)).to(device).float().view((-1, 1))
                 # create mask for episode ends
@@ -222,12 +201,8 @@ class MetaLearner:
                 # before resetting, update the embedding and add to vae buffer
                 # (last state might include useful task info)
                 if not (self.args.disable_decoder and self.args.disable_kl_term):
-                    self.vae.rollout_storage.insert(prev_state.clone(),
-                                                    action.detach().clone(),
-                                                    next_state.clone(),
-                                                    rew_raw.clone(),
-                                                    done.clone(),
-                                                    task.clone() if task is not None else None)
+                    self.vae.rollout_storage.insert(prev_state.clone(), next_state.clone(), rew_raw.clone(),
+                                                    done.clone(), task.clone() if task is not None else None,,
 
                 # add the obs before reset to the policy storage
                 self.policy_storage.next_state[step] = next_state.clone()
@@ -235,7 +210,7 @@ class MetaLearner:
                 # reset environments that are done
                 done_indices = np.argwhere(done.cpu().flatten()).flatten()
                 if len(done_indices) > 0:
-                    next_state, belief, task = utl.reset_env(self.envs, self.args,
+                    next_state, task = utl.reset_env(self.envs, self.args,
                                                              indices=done_indices, state=next_state)
 
                 # TODO: deal with resampling for posterior sampling algorithm
@@ -270,9 +245,9 @@ class MetaLearner:
 
                 # check if we are pre-training the VAE
                 if self.args.pretrain_len > self.iter_idx:
-                    for p in range(self.args.num_vae_updates_per_pretrain):
+                    for p in range(self.args.num_representation_learner_updates_per_pretrain):
                         self.vae.compute_vae_loss(update=True,
-                                                  pretrain_index=self.iter_idx * self.args.num_vae_updates_per_pretrain + p)
+                                                  pretrain_index=self.iter_idx * self.args.num_representation_learner_updates_per_pretrain + p)
                 # otherwise do the normal update (policy + vae)
                 else:
 
@@ -320,7 +295,7 @@ class MetaLearner:
 
     def get_value(self, state, belief, task, latent_sample, latent_mean, latent_logvar):
         latent = utl.get_latent_for_policy(self.args, latent_sample=latent_sample, latent_mean=latent_mean, latent_logvar=latent_logvar)
-        return self.policy.actor_critic.get_value(state=state, belief=belief, task=task, latent=latent).detach()
+        return self.policy.actor_critic.get_value(state=state, task=task, hidden_state=).detach()
 
     def update(self, state, belief, task, latent_sample, latent_mean, latent_logvar):
         """
@@ -346,11 +321,8 @@ class MetaLearner:
                                                 use_proper_time_limits=self.args.use_proper_time_limits)
 
             # update agent (this will also call the VAE update!)
-            policy_train_stats = self.policy.update(
-                policy_storage=self.policy_storage,
-                encoder=self.vae.encoder,
-                rlloss_through_encoder=self.args.rlloss_through_encoder,
-                compute_vae_loss=self.vae.compute_vae_loss)
+            policy_train_stats = self.policy.policy_update(policy_storage=self.policy_storage,
+                                                           compute_vae_loss=self.vae.compute_vae_loss)
         else:
             policy_train_stats = 0, 0, 0, 0
 

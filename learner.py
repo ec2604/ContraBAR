@@ -102,25 +102,13 @@ class Learner:
     def initialise_policy(self):
 
         # initialise policy network
-        policy_net = Policy(
-            args=self.args,
-            #
-            pass_state_to_policy=self.args.pass_state_to_policy,
-            pass_latent_to_policy=False,  # use metalearner.py if you want to use the VAE
-            pass_belief_to_policy=self.args.pass_belief_to_policy,
-            pass_task_to_policy=self.args.pass_task_to_policy,
-            dim_state=self.args.state_dim,
-            dim_latent=0,
-            dim_belief=self.args.belief_dim,
-            dim_task=self.args.task_dim,
-            #
-            hidden_layers=self.args.policy_layers,
-            activation_function=self.args.policy_activation_function,
-            policy_initialisation=self.args.policy_initialisation,
-            #
-            action_space=self.envs.action_space,
-            init_std=self.args.policy_init_std,
-        ).to(device)
+        policy_net = Policy(args=self.args, pass_state_to_policy=self.args.pass_state_to_policy,
+                            pass_latent_to_policy=False, pass_task_to_policy=self.args.pass_task_to_policy,
+                            dim_state=self.args.state_dim, dim_latent=0, dim_task=self.args.task_dim,
+                            hidden_layers=self.args.policy_layers,
+                            activation_function=self.args.policy_activation_function,
+                            policy_initialisation=self.args.policy_initialisation, action_space=self.envs.action_space,
+                            init_std=self.args.policy_init_std).to(device)
 
         # initialise policy trainer
         if self.args.policy == 'a2c':
@@ -136,22 +124,12 @@ class Learner:
                 eps=self.args.policy_eps,
             )
         elif self.args.policy == 'ppo':
-            policy = PPO(
-                self.args,
-                policy_net,
-                self.args.policy_value_loss_coef,
-                self.args.policy_entropy_coef,
-                policy_optimiser=self.args.policy_optimiser,
-                policy_anneal_lr=self.args.policy_anneal_lr,
-                train_steps=self.num_updates,
-                lr=self.args.lr_policy,
-                eps=self.args.policy_eps,
-                ppo_epoch=self.args.ppo_num_epochs,
-                num_mini_batch=self.args.ppo_num_minibatch,
-                use_huber_loss=self.args.ppo_use_huberloss,
-                use_clipped_value_loss=self.args.ppo_use_clipped_value_loss,
-                clip_param=self.args.ppo_clip_param,
-            )
+            policy = PPO(self.args, policy_net, self.args.policy_value_loss_coef, self.args.policy_entropy_coef,
+                         policy_optimiser=self.args.policy_optimiser, policy_anneal_lr=self.args.policy_anneal_lr,
+                         train_steps=self.num_updates, lr=self.args.lr_policy, clip_param=self.args.ppo_clip_param,
+                         ppo_epoch=self.args.ppo_num_epochs, num_mini_batch=self.args.ppo_num_minibatch,
+                         eps=self.args.policy_eps, use_huber_loss=self.args.ppo_use_huberloss,
+                         use_clipped_value_loss=self.args.ppo_use_clipped_value_loss)
         else:
             raise NotImplementedError
 
@@ -162,7 +140,7 @@ class Learner:
         start_time = time.time()
 
         # reset environments
-        state, belief, task = utl.reset_env(self.envs, self.args)
+        state, task = utl.reset_env(self.envs, self.args)
 
         # insert initial observation / embeddings to rollout storage
         self.policy_storage.prev_state[0].copy_(state)
@@ -187,7 +165,7 @@ class Learner:
                         deterministic=False)
 
                 # observe reward and next obs
-                [state, belief, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action, self.args)
+                [state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action, self.args)
 
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done]).to(device)
@@ -197,7 +175,7 @@ class Learner:
                 # reset environments that are done
                 done_indices = np.argwhere(done.flatten()).flatten()
                 if len(done_indices) > 0:
-                    state, belief, task = utl.reset_env(self.envs, self.args,
+                    state, task = utl.reset_env(self.envs, self.args,
                                                         indices=done_indices, state=state)
 
                 # add experience to policy buffer
@@ -229,8 +207,8 @@ class Learner:
             # clean up after update
             self.policy_storage.after_update()
 
-    def get_value(self, state, belief, task):
-        return self.policy.actor_critic.get_value(state=state, belief=belief, task=task, latent=None).detach()
+    def get_value(self, state, task):
+        return self.policy.actor_critic.get_value(state=state, task=task).detach()
 
     def update(self, state, belief, task):
         """
@@ -240,14 +218,14 @@ class Learner:
         """
         # bootstrap next value prediction
         with torch.no_grad():
-            next_value = self.get_value(state=state, belief=belief, task=task)
+            next_value = self.get_value(state=state, task=task)
 
         # compute returns for current rollouts
         self.policy_storage.compute_returns(next_value, self.args.policy_use_gae, self.args.policy_gamma,
                                             self.args.policy_tau,
                                             use_proper_time_limits=self.args.use_proper_time_limits)
 
-        policy_train_stats = self.policy.update(policy_storage=self.policy_storage)
+        policy_train_stats = self.policy.policy_update(policy_storage=self.policy_storage)
 
         return policy_train_stats, None
 

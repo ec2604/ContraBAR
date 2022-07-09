@@ -25,8 +25,8 @@ register(
     'AntGoal-v0',
     entry_point='environments.wrappers:mujoco_wrapper',
     kwargs={'entry_point': 'environments.mujoco.ant_goal:AntGoalEnv',
-            'max_episode_steps': 50},
-    max_episode_steps=50
+            'max_episode_steps': 200},
+    max_episode_steps=200
 )
 register(
     'AntGoalImage-v0',
@@ -35,6 +35,14 @@ register(
             'max_episode_steps': 200},
     max_episode_steps=200
 )
+register(
+    'SparseAntGoalImage-v0',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.ant_goal_image:SparseAntGoalEnvImage',
+            'max_episode_steps': 50},
+    max_episode_steps=50
+)
+
 
 register(
     'HalfCheetahDir-v0',
@@ -168,8 +176,8 @@ register(
 register(
     'SparseReacher-v0',
     entry_point='environments.dm_control.reacher:ReacherEnv',
-    kwargs={'max_episode_steps': 100, 'image_size': 64, 'action_repeat': 4, 'dense': False},
-    max_episode_steps=100
+    kwargs={'max_episode_steps': 50, 'image_size': 64, 'action_repeat': 4, 'dense': False},
+    max_episode_steps=50
 )
 #
 # # Procgen

@@ -7,12 +7,15 @@ import torch.nn as nn
 
 from utils import helpers as utl
 from models.encoder import ImageEncoder
+
 try:
     from torch.distributions import TanhTransform, TransformedDistribution
+
 
     class TanhNormal(TransformedDistribution):
         def __init__(self, base_distribution, transforms, validate_args=None):
             super().__init__(base_distribution, transforms, validate_args=None)
+
 
     @property
     def mean(self):
@@ -30,25 +33,8 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Policy(nn.Module):
-    def __init__(self,
-                 args,
-                 # input
-                 pass_state_to_policy,
-                 pass_latent_to_policy,
-                 pass_belief_to_policy,
-                 pass_task_to_policy,
-                 dim_state,
-                 dim_latent,
-                 dim_belief,
-                 dim_task,
-                 # hidden
-                 hidden_layers,
-                 activation_function,  # tanh, relu, leaky-relu
-                 policy_initialisation,  # orthogonal / normc
-                 # output
-                 action_space,
-                 init_std, **kwargs
-                 ):
+    def __init__(self, args, pass_state_to_policy, pass_latent_to_policy, pass_task_to_policy, dim_state, dim_latent,
+                 dim_task, hidden_layers, activation_function, policy_initialisation, action_space, init_std, **kwargs):
         """
         The policy can get any of these as input:
         - state (given by environment)
@@ -69,14 +55,15 @@ class Policy(nn.Module):
             raise ValueError
 
         if policy_initialisation == 'normc':
-            init_ = lambda m: init(m, init_normc_, lambda x: nn.init.constant_(x, 0), nn.init.calculate_gain(activation_function))
+            init_ = lambda m: init(m, init_normc_, lambda x: nn.init.constant_(x, 0),
+                                   nn.init.calculate_gain(activation_function))
         elif policy_initialisation == 'orthogonal':
-            init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), nn.init.calculate_gain(activation_function))
+            init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0),
+                                   nn.init.calculate_gain(activation_function))
 
         self.pass_state_to_policy = pass_state_to_policy
         self.pass_latent_to_policy = pass_latent_to_policy
         self.pass_task_to_policy = pass_task_to_policy
-        self.pass_belief_to_policy = pass_belief_to_policy
 
         # set normalisation parameters for the inputs
         # (will be updated from outside using the RL batches)
@@ -86,14 +73,10 @@ class Policy(nn.Module):
         self.norm_latent = self.args.norm_latent_for_policy and (dim_latent is not None)
         if self.pass_latent_to_policy and self.norm_latent:
             self.latent_rms = utl.RunningMeanStd(shape=(dim_latent))
-        self.norm_belief = self.args.norm_belief_for_policy and (dim_belief is not None)
-        if self.pass_belief_to_policy and self.norm_belief:
-            self.belief_rms = utl.RunningMeanStd(shape=(dim_belief))
         self.norm_task = self.args.norm_task_for_policy and (dim_task is not None)
         if self.pass_task_to_policy and self.norm_task:
             self.task_rms = utl.RunningMeanStd(shape=(dim_task))
         curr_input_dim = dim_latent * int(self.pass_latent_to_policy) + \
-                         dim_belief * int(self.pass_belief_to_policy) + \
                          dim_task * int(self.pass_task_to_policy)
         if self.pass_state_to_policy:
             curr_input_dim += dim_state[0]
@@ -105,22 +88,22 @@ class Policy(nn.Module):
                 curr_input_dim = curr_input_dim - dim_state[0] + self.args.state_embedding_size
             else:
                 if len(dim_state) == 1:
-                    self.state_encoder = utl.FeatureExtractor(*dim_state, self.args.policy_state_embedding_dim, self.activation_function)
+                    self.state_encoder = utl.FeatureExtractor(*dim_state, self.args.policy_state_embedding_dim,
+                                                              self.activation_function)
                     curr_input_dim = curr_input_dim - dim_state[0] + self.args.policy_state_embedding_dim
                 else:
-                    self.state_encoder = ImageEncoder(dim_state, self.args.policy_state_embedding_dim, self.args.image_encoder_layers)
+                    self.state_encoder = ImageEncoder(dim_state, self.args.policy_state_embedding_dim,
+                                                      self.args.image_encoder_layers)
                     curr_input_dim = curr_input_dim - dim_state[0] + self.args.policy_state_embedding_dim
         self.use_latent_encoder = self.args.policy_latent_embedding_dim is not None
         if self.pass_latent_to_policy and self.use_latent_encoder:
-            self.latent_encoder = utl.FeatureExtractor(dim_latent, self.args.policy_latent_embedding_dim, self.activation_function)
+            self.latent_encoder = utl.FeatureExtractor(dim_latent, self.args.policy_latent_embedding_dim,
+                                                       self.activation_function)
             curr_input_dim = curr_input_dim - dim_latent + self.args.policy_latent_embedding_dim
-        self.use_belief_encoder = self.args.policy_belief_embedding_dim is not None
-        if self.pass_belief_to_policy and self.use_belief_encoder:
-            self.belief_encoder = utl.FeatureExtractor(dim_belief, self.args.policy_belief_embedding_dim, self.activation_function)
-            curr_input_dim = curr_input_dim - dim_belief + self.args.policy_belief_embedding_dim
         self.use_task_encoder = self.args.policy_task_embedding_dim is not None
         if self.pass_task_to_policy and self.use_task_encoder:
-            self.task_encoder = utl.FeatureExtractor(dim_task, self.args.policy_task_embedding_dim, self.activation_function)
+            self.task_encoder = utl.FeatureExtractor(dim_task, self.args.policy_task_embedding_dim,
+                                                     self.activation_function)
             curr_input_dim = curr_input_dim - dim_task + self.args.policy_task_embedding_dim
         # initialise actor and critic
         hidden_layers = [int(h) for h in hidden_layers]
@@ -164,7 +147,7 @@ class Policy(nn.Module):
             h = self.activation_function(h)
         return h
 
-    def forward(self, state, latent, belief, task):
+    def forward(self, state, latent, task):
 
         # handle inputs (normalise + embed)
 
@@ -179,11 +162,14 @@ class Policy(nn.Module):
                         state = self.state_encoder(state)
                         state = state.reshape(*orig_state_shape[:-3], -1)
                 else:
-                    # state = self.state_encoder(state)
-                    orig_state_shape = state.shape
-                    state = state.reshape((-1, *state.shape[-3:]))
-                    state = self.state_encoder(state)
-                    state = state.reshape(*orig_state_shape[:-3], -1)
+                    if self.args.from_pixels:
+                        orig_state_shape = state.shape
+                        state = state.reshape((-1, *state.shape[-3:]))
+                        state = self.state_encoder(state)
+                        state = state.reshape(*orig_state_shape[:-3], -1)
+                    else:
+                        state = self.state_encoder(state)
+
         else:
             state = torch.zeros(0, ).to(device)
         if self.pass_latent_to_policy:
@@ -193,13 +179,6 @@ class Policy(nn.Module):
                 latent = self.latent_encoder(latent)
         else:
             latent = torch.zeros(0, ).to(device)
-        if self.pass_belief_to_policy:
-            if self.norm_belief:
-                belief = (belief - self.belief_rms.mean) / torch.sqrt(self.belief_rms.var + 1e-8)
-            if self.use_belief_encoder:
-                belief = self.belief_encoder(belief.float())
-        else:
-            belief = torch.zeros(0, ).to(device)
         if self.pass_task_to_policy:
             if self.norm_task:
                 task = (task - self.task_rms.mean) / torch.sqrt(self.task_rms.var + 1e-8)
@@ -209,17 +188,17 @@ class Policy(nn.Module):
             task = torch.zeros(0, ).to(device)
 
         # concatenate inputs
-        inputs = torch.cat((state, latent, belief, task), dim=-1)
+        inputs = torch.cat((state, latent, task), dim=-1)
         # forward through critic/actor part
         hidden_critic = self.forward_critic(inputs)
         hidden_actor = self.forward_actor(inputs)
         return self.critic_linear(hidden_critic), hidden_actor
 
-    def act(self, state, latent, belief, task, deterministic=False):
+    def act(self, state, latent, task, deterministic=False):
         """
         Returns the (raw) actions and their value.
         """
-        value, actor_features = self.forward(state=state, latent=latent, belief=belief, task=task)
+        value, actor_features = self.forward(state=state, latent=latent, task=task)
         dist = self.dist(actor_features)
         if deterministic:
             if isinstance(dist, FixedCategorical):
@@ -231,8 +210,8 @@ class Policy(nn.Module):
 
         return value, action
 
-    def get_value(self, state, latent, belief, task):
-        value, _ = self.forward(state, latent, belief, task)
+    def get_value(self, state, latent, task):
+        value, _ = self.forward(state, latent, task)
         return value
 
     def update_rms(self, args, policy_storage):
@@ -240,21 +219,14 @@ class Policy(nn.Module):
         if self.pass_state_to_policy and self.norm_state:
             self.state_rms.update(policy_storage.prev_state[:-1])
         if self.pass_latent_to_policy and self.norm_latent:
-            # latent = utl.get_latent_for_policy(args,
-            #                                    torch.cat(policy_storage.latent_samples[:-1]),
-            #                                    torch.cat(policy_storage.latent_mean[:-1]),
-            #                                    torch.cat(policy_storage.latent_logvar[:-1])
-            #                                    )
             latent = policy_storage.hidden_states[:-1]
             self.latent_rms.update(latent)
-        if self.pass_belief_to_policy and self.norm_belief:
-            self.belief_rms.update(policy_storage.beliefs[:-1])
         if self.pass_task_to_policy and self.norm_task:
             self.task_rms.update(policy_storage.tasks[:-1])
 
-    def evaluate_actions(self, state, latent, belief, task, action):
+    def evaluate_actions(self, state, latent, task, action):
 
-        value, actor_features = self.forward(state, latent, belief, task)
+        value, actor_features = self.forward(state, latent, task)
         dist = self.dist(actor_features)
 
         if self.args.norm_actions_post_sampling:
@@ -335,7 +307,6 @@ class DiagGaussian(nn.Module):
         self.min_std = torch.tensor([1e-6]).to(device)
 
     def forward(self, x):
-
         action_mean = self.fc_mean(x)
         if self.norm_actions_pre_sampling:
             action_mean = torch.tanh(action_mean)

@@ -101,7 +101,7 @@ class AntEnv(MujocoEnv):
 
         # (re)set environment
         env.reset_task()
-        state, belief, task = utl.reset_env(env, args)
+        state, task = utl.reset_env(env, args)
         start_obs_raw = state.clone()
         start_img = rgb2gray(self.render('rgb_array', height=64, width=64))
         task = task.view(-1) if task is not None else None
@@ -138,17 +138,11 @@ class AntEnv(MujocoEnv):
                     episode_prev_obs[episode_idx].append(state.clone())
                     # episode_prev_img[episode_idx].append(curr_img.copy())
                 # act
-                _, action = utl.select_action_cpc(args=args,
-                                                 policy=policy,
-                                                 belief=belief,
-                                                 task=task,
-                                                 deterministic=True,
-                                                 state=state,
-                                                 hidden_latent=current_hidden_state.squeeze(0)
-                                                 )
+                _, action = utl.select_action_cpc(args=args, policy=policy, deterministic=True,
+                                                  hidden_latent=current_hidden_state.squeeze(0), state=state, task=task)
 
 
-                (state, belief, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
+                (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 # curr_img = rgb2gray(self.render('rgb_array', height=64, width=64))
                 state = state.float().reshape((1, -1)).to(device)
                 task = task.view(-1) if task is not None else None
