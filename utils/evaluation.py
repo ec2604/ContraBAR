@@ -150,7 +150,7 @@ def evaluate(args,
     next_state_per_episode_list = []
     actions_per_episode_list = []
     rewards_per_episode_list = []
-    if args.underlying_state_dim != 0:
+    if len(args.underlying_state_dim) > 0:
         underlying_state_per_episode_list = []
     tasks_list = []
     hidden_state_list_all_proc = []
@@ -170,14 +170,22 @@ def evaluate(args,
                              )
         num_steps = envs._max_episode_steps
         prev_state_per_episode = torch.zeros((num_episodes, num_steps, *args.state_dim)).to(device)
+        # prev_state_per_episode = torch.zeros((num_episodes, num_steps, 4, 64, 64)).to(device)
         next_state_per_episode = torch.zeros((num_episodes, num_steps, *args.state_dim)).to(device)
+        # next_state_per_episode = torch.zeros((num_episodes, num_steps, 4, 64, 64)).to(device)
+
         actions_per_episode = torch.zeros((num_episodes, num_steps, args.action_dim)).to(device)
         rewards_per_episode = torch.zeros((num_episodes, num_steps, 1)).to(device)
-        if args.underlying_state_dim != 0:
-            underlying_state_per_episode = torch.zeros((num_episodes, num_steps, args.underlying_state_dim)).to(device)
+        if len(args.underlying_state_dim) >  0:
+            underlying_state_per_episode = torch.zeros((num_episodes, num_steps, *args.underlying_state_dim)).to(device)
         hidden_state_list = []
         # reset environments
         state, task = utl.reset_env(envs, args)
+        # orig_state  = torch.from_numpy(
+        #             np.stack([method for method in envs.venv.get_images_()])).to(device)
+        # orig_state = torch.cat([orig_state, torch.ones(orig_state.shape[0], 1,
+        #                                                              *orig_state.shape[2:]).to(
+        #     device)], dim=1).float()
         tasks_list.append(task.clone())
         # this counts how often an agent has done the same task already
         task_count = 0
@@ -199,7 +207,20 @@ def evaluate(args,
                 # observe reward and next obs
                 [state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(envs, action, args)
                 done_mdp = [info['done_mdp'] for info in infos]
-                underlying_states = torch.from_numpy(np.stack([info['state'] for info in infos],axis=0)).to(device)
+                # if len(args.underlying_state_dim) > 0:
+                    # underlying_states = torch.from_numpy(np.stack([info['state'] for info in infos],axis=0)).to(device)
+                # underlying_states = torch.from_numpy(
+                #     np.stack([method for method in envs.venv.get_images_()])).to(device)
+                # if done[0]:
+                #     underlying_states = torch.cat([underlying_states, torch.ones(underlying_states.shape[0], 1,
+                #                                                                  *underlying_states.shape[2:]).to(
+                #         device)], dim=1).float()
+                # else:
+                #     underlying_states = torch.cat([underlying_states, torch.zeros(underlying_states.shape[0], 1,
+                #                                                                   *underlying_states.shape[2:]).to(
+                #         device)],
+                #                                   dim=1).float()
+                # rew_cpc = torch.from_numpy(np.stack([info['goal_forward'] >= 0.3 for info in infos],axis=0)).to(device)
                 if encoder is not None:
                     # update the hidden state
                     # hidden_state = utl.update_encoding_cpc(encoder=encoder.encoder,
@@ -209,15 +230,17 @@ def evaluate(args,
                     #                                        done=None,
                     #                                        hidden_state=hidden_state)
                     hidden_state = encoder.encoder(
-                        action.float().to(device), state, rew_raw.float().to(device),
+                        action.float().to(device), state,
+                        # rew_cpc.reshape(-1,1).float().to(device),
+                        rew_raw.float().to(device),
                         hidden_state, return_prior=False)
                     hidden_state_list.append(hidden_state.clone())
 
                 next_state_per_episode[episode_idx, step_idx, ...] = state.clone()
                 rewards_per_episode[episode_idx, step_idx, ...] = rew_raw.clone()
                 actions_per_episode[episode_idx, step_idx, ...] = action.clone()
-                if args.underlying_state_dim != 0:
-                    underlying_state_per_episode[episode_idx, step_idx, ...] = underlying_states.clone()
+                # if len(args.underlying_state_dim) > 0:
+                #     underlying_state_per_episode[episode_idx, step_idx, ...] = underlying_states.clone()
                 # add rewards
                 curr_returns_per_episode += rew_raw.view(-1).clone()
                 returns_per_episode[i, task_count] = curr_returns_per_episode.clone()
@@ -230,8 +253,8 @@ def evaluate(args,
 
 
         envs.close()
-        if args.underlying_state_dim != 0:
-            underlying_state_per_episode_list.append(underlying_state_per_episode.clone())
+        # if len(args.underlying_state_dim) > 0:
+        #     underlying_state_per_episode_list.append(underlying_state_per_episode.clone())
         rewards_per_episode_list.append(rewards_per_episode.clone())
         prev_state_per_episode_list.append(prev_state_per_episode.clone())
         next_state_per_episode_list.append(next_state_per_episode.clone())
@@ -239,7 +262,7 @@ def evaluate(args,
         hidden_state_list_all_proc.append(torch.cat(hidden_state_list, dim=1).clone())
 
     rewards_per_episode_list = torch.stack(rewards_per_episode_list, dim=2)
-    if args.underlying_state_dim != 0:
+    if len(args.underlying_state_dim) > 0:
         underlying_state_per_episode_list = torch.stack(underlying_state_per_episode_list, dim=2)
     actions_per_episode_list = torch.stack(actions_per_episode_list, dim=2)
     prev_state_per_episode_list = torch.stack(prev_state_per_episode_list, dim=2)
@@ -253,9 +276,9 @@ def evaluate(args,
     actions_per_episode_list = actions_per_episode_list.reshape(num_episodes * num_steps, num_processes,
                                                                 args.action_dim)
     rewards_per_episode_list = rewards_per_episode_list.reshape(num_episodes * num_steps, num_processes, 1)
-    if args.underlying_state_dim != 0:
+    if len(args.underlying_state_dim) > 0:
         underlying_state_per_episode_list = underlying_state_per_episode_list.reshape(num_episodes * num_steps, num_processes,
-                                                                                      args.underlying_state_dim)
+                                                                                      *args.underlying_state_dim)
     else:
         underlying_state_per_episode_list = None
     eval_cpc_stats = encoder.compute_cpc_loss(batch=
@@ -263,7 +286,7 @@ def evaluate(args,
                                                rewards_per_episode_list, tasks_list, underlying_state_per_episode_list,\
                                                num_steps * num_episodes))
     eval_representation_stats = None
-    if args.evaluate_representation:
+    if args.evaluate_representation and args.evaluate_start_iter <= iter_idx:
         eval_representation_stats = encoder.calc_latent_evaluator_loss(tasks_list, hidden_state_list_all_proc)  # fix this
     return returns_per_episode[:, :num_episodes], eval_cpc_stats, eval_representation_stats
 
@@ -377,7 +400,7 @@ def get_test_rollout(args, env, policy, encoder=None):
             # observe reward and next obs
             (state, task), (rew_raw, rew_normalised), done, infos = utl.env_step(env, action, args)
             state = state.reshape((1, -1)).to(device)
-            task = task.view(-1) if task is not None else None
+            #task = task.view(-1) if task is not None else None
 
             if encoder is not None:
                 # update task embedding

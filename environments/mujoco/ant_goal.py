@@ -13,6 +13,7 @@ class AntGoalEnv(AntEnv):
         #self.wind = np.array([random.random() * 0.01 - 0.005,random.random() * 0.01 - 0.005])
         super(AntGoalEnv, self).__init__()
 
+
     def step(self, action):
         self.do_simulation(action, self.frame_skip)
         #qpos = self.sim.data.qpos
@@ -36,7 +37,7 @@ class AntGoalEnv(AntEnv):
             reward_ctrl=-ctrl_cost,
             reward_contact=-contact_cost,
             reward_survive=survive_reward,
-            task=self.get_task()
+            task=self.get_task(),
         )
 
     def sample_tasks(self, num_tasks):
@@ -60,6 +61,42 @@ class AntGoalEnv(AntEnv):
             np.clip(self.sim.data.cfrc_ext, -1, 1).flat,
         ])
 
+    def is_goal_state(self, state=None):
+        if state is None:
+            state = np.array(self.get_body_com("torso"))
+        if np.linalg.norm(state[:2] - self.goal_pos) <= self.goal_radius:
+            return True
+        else:
+            return False
+
+    def sparsify_rewards(self, d):
+        non_goal_reward_keys = []
+        for key in d.keys():
+            if key.startswith('reward') and key != "reward_goal":
+                non_goal_reward_keys.append(key)
+        non_goal_rewards = np.sum([d[reward_key] for reward_key in non_goal_reward_keys])
+        #non_goal_rewards = d['reward_ctrl']
+        sparse_goal_reward = 1. if self.is_goal_state() else 0.
+        return non_goal_rewards + sparse_goal_reward
+
+    def get_state(self):
+        return np.concatenate([
+            self.sim.data.qpos.flat,
+            self.sim.data.qvel.flat,
+            np.clip(self.sim.data.cfrc_ext, -1, 1).flat,
+        ])
+
+class SparseAntGoalEnv(AntGoalEnv):
+    def __init__(self, max_episode_steps=50, goal_radius=0.2):  # , stochastic_moves=True):
+        self.goal_radius = goal_radius
+        # self.wind = np.array([0, 0])
+        # self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
+        super().__init__(max_episode_steps)
+
+    def step(self, action):
+        ob, reward, done, d = super().step(action)
+        sparse_reward = self.sparsify_rewards(d)
+        return ob, sparse_reward, done, d
 
 class AntGoalOracleEnv(AntGoalEnv):
     def _get_obs(self):

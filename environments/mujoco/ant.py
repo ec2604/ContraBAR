@@ -104,7 +104,7 @@ class AntEnv(MujocoEnv):
         state, task = utl.reset_env(env, args)
         start_obs_raw = state.clone()
         start_img = rgb2gray(self.render('rgb_array', height=64, width=64))
-        task = task.view(-1) if task is not None else None
+        #task = task.view(-1) if task is not None else None
 
         # initialise actions and rewards (used as initial input to policy if we have a recurrent policy)
         if hasattr(args, 'hidden_size'):
@@ -145,7 +145,8 @@ class AntEnv(MujocoEnv):
                 (state, task), (rew, rew_normalised), done, info = utl.env_step(env, action, args)
                 # curr_img = rgb2gray(self.render('rgb_array', height=64, width=64))
                 state = state.float().reshape((1, -1)).to(device)
-                task = task.view(-1) if task is not None else None
+                # rew_cpc = torch.from_numpy(np.array(info[0]['goal_forward'] >= 0.3))
+                # task = task.view(-1) if task is not None else None
 
                 # keep track of position
                 pos[episode_idx].append(unwrapped_env.get_body_com("torso")[:2].copy())
@@ -153,8 +154,10 @@ class AntEnv(MujocoEnv):
                 if encoder is not None:
                     # update task embedding
                     current_hidden_state = encoder(
-                        action.reshape(1, -1).float().to(device), state, rew.reshape(1, -1).float().to(device),
-                        hidden_state, return_prior=False)
+                        action.reshape(1, -1).float().to(device), state,
+                        # rew_cpc.reshape(1, -1).float().to(device), #
+                        rew.reshape(1, -1).float().to(device),
+                        current_hidden_state, return_prior=False)
 
                     episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
@@ -181,39 +184,39 @@ class AntEnv(MujocoEnv):
         #                            episode_prev_img[0].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
         # plot the movement of the ant
         # print(pos)
-        figure = plt.figure(figsize=(5, 4 * num_episodes))
-        min_dim = -3.5
-        max_dim = 3.5
-        span = max_dim - min_dim
 
         for i in range(num_episodes):
-            plt.subplot(num_episodes, 1, i + 1)
-
-            x = list(map(lambda p: p[0], pos[i]))
-            y = list(map(lambda p: p[1], pos[i]))
+            figure = plt.figure()
+            x = list(map(lambda p: p[0], pos[i]))[:-1]
+            y = list(map(lambda p: p[1], pos[i]))[:-1]
+            angle = np.linspace(0, np.pi)
+            goal_range_x = np.cos(angle)
+            goal_range_y = np.sin(angle)
+            plt.plot(goal_range_x, goal_range_y, 'k--', alpha=0.1)
             plt.plot(x[0], y[0], 'bo')
 
-            plt.scatter(x, y, 1, 'g')
-
+            plt.plot(x, y, '-')
             curr_task = env.get_task()[0]
             plt.title(f'task: {curr_task}, Cumulative reward: {episode_rewards[i].sum():.2f}')
             if 'Goal' in args.env_name:
                 plt.plot(curr_task[0], curr_task[1], 'rx')
+            if hasattr(self, 'goal_radius'):
+                circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
+                plt.gca().add_artist(circle1)
 
             plt.ylabel('y-position (ep {})'.format(i), fontsize=15)
 
-            if i == num_episodes - 1:
-                plt.xlabel('x-position', fontsize=15)
-                plt.ylabel('y-position (ep {})'.format(i), fontsize=15)
-            plt.xlim(min_dim - 0.05 * span, max_dim + 0.05 * span)
-            plt.ylim(min_dim - 0.05 * span, max_dim + 0.05 * span)
+            plt.xlabel('x-position', fontsize=15)
+            plt.ylabel('y-position (ep {})'.format(i), fontsize=15)
+            plt.xlim(-1.2, 1.2)
+            plt.ylim(-0.5, 1.2)
 
-        plt.tight_layout()
-        kwargs['logger'].add_figure('belief', figure, iter_idx)
-        plt.close()
-        # if image_folder is not None:
-        #     plt.savefig('{}/{}_behaviour'.format(image_folder, iter_idx))
-        #     plt.close()
+            plt.tight_layout()
+            kwargs['logger'].add_figure(f'belief_{i}', figure, iter_idx)
+            plt.close()
+            # if image_folder is not None:
+            #     plt.savefig('{}/{}_ep_{}_behaviour'.format(image_folder, iter_idx, i))
+            #     plt.close()
         # else:
         #     plt.show()
 

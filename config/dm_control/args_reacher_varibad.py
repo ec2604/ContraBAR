@@ -141,6 +141,7 @@ def get_args(rest_args):
     parser.add_argument('--save_intermediate_models', type=boolean_argument, default=False, help='save all models')
     parser.add_argument('--eval_interval', type=int, default=20, help='eval interval, one eval per n updates')
     parser.add_argument('--vis_interval', type=int, default=20, help='visualisation interval, one eval per n updates')
+    parser.add_argument('--gradient_log_interval', type=int, default=100)
     parser.add_argument('--results_log_dir', default=None, help='directory to save results (None uses ./logs)')
 
     # general settings

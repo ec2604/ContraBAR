@@ -5,7 +5,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 from math import floor
 from utils import helpers as utl
-
+from torch.nn.utils import spectral_norm
+from models import GRU_layernorm
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
@@ -33,9 +34,9 @@ class RNNEncoder(nn.Module):
         self.reparameterise = self._sample_gaussian
 
         # embed action, state, reward
-        self.state_encoder = utl.FeatureExtractor(state_dim, state_embed_dim, F.relu)
-        self.action_encoder = utl.FeatureExtractor(action_dim, action_embed_dim, F.relu)
-        self.reward_encoder = utl.FeatureExtractor(reward_size, reward_embed_size, F.relu)
+        self.state_encoder = utl.FeatureExtractor(state_dim, state_embed_dim, torch.relu)
+        self.action_encoder = utl.FeatureExtractor(action_dim, action_embed_dim, torch.relu)
+        self.reward_encoder = utl.FeatureExtractor(reward_size, reward_embed_size, torch.relu)
 
         # fully connected layers before the recurrent cell
         curr_input_dim = action_embed_dim + state_embed_dim + reward_embed_size
@@ -202,7 +203,6 @@ class RNNCPCEncoder(nn.Module):
                  reward_embed_size=5,
                  ):
         super(RNNCPCEncoder, self).__init__()
-        self.init_weights()
         self.args = args
         self.latent_dim = latent_dim
         self.hidden_size = hidden_size
@@ -211,65 +211,60 @@ class RNNCPCEncoder(nn.Module):
         if len(state_dim) > 1:
             self.state_encoder = ImageEncoder(state_dim, state_embed_dim, self.args.image_encoder_layers)
         else:
-            self.state_encoder = utl.FeatureExtractor(*state_dim, state_embed_dim, torch.relu)
-        self.action_encoder = utl.FeatureExtractor(action_dim, action_embed_dim, torch.relu)
-        self.reward_encoder = utl.FeatureExtractor(reward_size, reward_embed_size, torch.relu)
+            self.state_encoder = utl.FeatureExtractor(*state_dim, state_embed_dim, F.elu)
+        self.action_encoder = utl.FeatureExtractor(action_dim, action_embed_dim, F.elu)
+        self.reward_encoder = utl.FeatureExtractor(reward_size, reward_embed_size, F.elu)
 
+        # self.init_weights()
         # fully connected layers before the recurrent cell
-        curr_input_dim = action_embed_dim + state_embed_dim + reward_embed_size
-        # self.ln = torch.nn.LayerNorm(curr_input_dim)
+        curr_input_dim = action_embed_dim + state_embed_dim + reward_embed_size#self.state_encoder.output_size + reward_embed_size
         self.fc_before_gru = nn.ModuleList([])
         for i in range(len(layers_before_gru)):
             self.fc_before_gru.append(nn.Linear(curr_input_dim, layers_before_gru[i]))
             curr_input_dim = layers_before_gru[i]
+        self.ln = torch.nn.LayerNorm(curr_input_dim)
         # self.ln = nn.LayerNorm(curr_input_dim)
+        # if self.args.with_action_gru:
+        #     self.ln_without_action = nn.LayerNorm(curr_input_dim - action_embed_dim)
         # recurrent unit
         # TODO: TEST RNN vs GRU vs LSTM
         self.gru = nn.GRU(input_size=curr_input_dim,
                           hidden_size=hidden_size,
                           num_layers=1,
                           )
-
-        for name, param in self.gru.named_parameters():
-            if 'bias' in name:
-                nn.init.constant_(param, 0)
-            elif 'weight' in name:
-                nn.init.orthogonal_(param)
+        # self.gru = GRU_layernorm.LayerNormGRUCell(input_size=curr_input_dim,
+        #                   hidden_size=hidden_size)
 
         # # fully connected layers after the recurrent cell
-        # curr_input_dim = hidden_size
-        # self.fc_after_gru = nn.ModuleList([])
-        # for i in range(len(layers_after_gru)):
-        #     self.fc_after_gru.append(nn.Linear(curr_input_dim, layers_after_gru[i]))
-        #     curr_input_dim = layers_after_gru[i]
-        #
-        # # output layer
-        # self.fc_mu = nn.Linear(curr_input_dim, latent_dim)
-        # self.fc_logvar = nn.Linear(curr_input_dim, latent_dim)
+        curr_input_dim = hidden_size
+        self.fc_after_gru = nn.ModuleList([])
+        for i in range(len(layers_after_gru)):
+            self.fc_after_gru.append(nn.Linear(curr_input_dim, layers_after_gru[i]))
+            curr_input_dim = layers_after_gru[i]
 
-    def init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu', a=math.sqrt(2))
-                # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
-                nn.init.normal_(m.weight, 0, 0.01)
-                # nn.init.xavier_normal_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                pass
-                # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
-                # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu', a=math.sqrt(5))
-                # nn.init.xavier_uniform_(m.weight)
-                # nn.init.xavier_normal_(m.weight)
-                # nn.init.orthogonal_(m.weight)
-                # nn.init.normal_(m.weight, 0, 0.01)
-                # if m.bias is not None:
-                #     nn.init.constant_(m.bias, 0)
-                # m.bias.data.fill_(.0)
+    # def init_weights(self):
+    #     for m in self.modules():
+    #         if isinstance(m, nn.Conv2d):
+    #             # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu', a=math.sqrt(2))
+    #             # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
+    #             nn.init.normal_(m.weight, 0, 0.01)
+    #             # nn.init.xavier_normal_(m.weight)
+    #             if m.bias is not None:
+    #                 nn.init.constant_(m.bias, 0)
+    #         elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+    #             nn.init.constant_(m.weight, 1)
+    #             nn.init.constant_(m.bias, 0)
+    #         elif isinstance(m, nn.Linear):
+    #             pass
+    #             # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+    #             # nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu', a=math.sqrt(5))
+    #             # nn.init.xavier_uniform_(m.weight)
+    #             # nn.init.xavier_normal_(m.weight)
+    #             # nn.init.orthogonal_(m.weight)
+    #             # nn.init.normal_(m.weight, 0, 0.01)
+    #             # if m.bias is not None:
+    #             #     nn.init.constant_(m.bias, 0)
+    #             # m.bias.data.fill_(.0)
 
     def reset_hidden(self, hidden_state, done):
         """ Reset the hidden state where the BAMDP was done (i.e., we get a new task) """
@@ -315,10 +310,15 @@ class RNNCPCEncoder(nn.Module):
             h = torch.cat((hr, h), dim=2)
         if with_actions:
             h = torch.cat((ha, h), dim=2)
-        # h = self.ln(h)
         # forward through fully connected layers before GRU
-        for i in range(len(self.fc_before_gru)):
+        for i in range(len(self.fc_before_gru)-1):
             h = F.relu(self.fc_before_gru[i](h))
+        if len(self.fc_before_gru) > 0:
+            h = self.fc_before_gru[-1](h)
+        if with_actions:
+            h = self.ln(h)
+        else:
+            h = self.ln_without_action(h)
         return h
 
     def forward(self, actions, states, rewards, hidden_state, return_prior, sample=True, detach_every=None):
@@ -353,7 +353,6 @@ class RNNCPCEncoder(nn.Module):
         if return_prior:
             output = torch.cat((prior_hidden_state, output))
         # output = output.clone()
-
         return output
 
 
@@ -374,28 +373,29 @@ class ImageEncoder(nn.Module):
 
         for hidden in self.hidden_sizes:
             out_channels, kernel, stride = hidden
-            conv = nn.Conv2d(in_channels=input_channels, out_channels=out_channels, kernel_size=kernel,
-                             stride=stride)
+            conv = spectral_norm(nn.Conv2d(in_channels=input_channels, out_channels=out_channels, kernel_size=kernel,
+                             stride=stride))
             self.convs.append(conv)
             input_channels = out_channels
             x = floor(((x + 2 * padding - dilation * (kernel - 1) - 1) / stride) + 1)
             y = floor(((y + 2 * padding - dilation * (kernel - 1) - 1) / stride) + 1)
 
-        output_size = x * y * input_channels
-        self.fc = nn.Linear(output_size, state_embed_dim)
-        # self.ln = nn.LayerNorm(state_embed_dim)
+        self.output_size = x * y * input_channels
+        self.fc = nn.Linear(self.output_size, state_embed_dim)
+        self.ln = nn.LayerNorm(state_embed_dim)
 
     def forward(self, input):
         out = input
         if out.max() > 1:
             out = out / 255
-            out *= 2
-            out -= 1
+            # out *= 2
+            # out -= 1
         for conv in self.convs:
-            out = torch.relu(conv(out))
+            out = F.elu(conv(out))
         out = out.view(input.shape[0], -1)
         out = self.fc(out)
-        # out = torch.tanh(out)
+        out = self.ln(out)
+        out = F.tanh(out)
         return out
 
 # class ImageEncoder(nn.Module):

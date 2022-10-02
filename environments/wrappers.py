@@ -133,7 +133,7 @@ class contrabarWrapper(gym.Wrapper):
 
         if self.add_done_info:
             if len(self.observation_space.shape) > 1:
-                state = np.concatenate((state, np.ones((1, *self.observation_space.shape[1:]))*float(self.done_mdp)))
+                state = np.concatenate((state, np.ones((1, *self.observation_space.shape[1:]))*(1*float(self.done_mdp))))
             else:
                 state = np.concatenate((state, [float(self.done_mdp)]))
 

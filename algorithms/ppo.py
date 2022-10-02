@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
+from models.policy import init
 from utils import helpers as utl
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class PPO:
@@ -37,7 +38,13 @@ class PPO:
         if policy_anneal_lr:
             lam = lambda f: 1 - f / train_steps
             self.lr_scheduler_policy = optim.lr_scheduler.LambdaLR(self.optimiser, lr_lambda=lam)
-
+    # def reset(self):
+    #     init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0),
+    #                    nn.init.calculate_gain('tanh'))
+    #     self.optimiser = optim.Adam(self.actor_critic.parameters(), lr=self.args.lr_policy, eps=self.args.policy_eps)
+    #     self.actor_critic.actor_layers[-1] = init_(self.actor_critic.actor_layers[-1])
+    #     self.actor_critic.critic_layers[-1] = init_(self.actor_critic.critic_layers[-1])
+    #     self.actor_critic.critic_linear = torch.nn.Linear(self.args.policy_layers[-1], 1).to(device)
     def policy_update(self, policy_storage):
 
         # -- get action values --
@@ -56,6 +63,7 @@ class PPO:
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
+        clip_frac_epoch = 0
         loss_epoch = 0
         for e in range(self.ppo_epoch):
 
@@ -79,7 +87,7 @@ class PPO:
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
                 action_loss = -torch.min(surr1, surr2).mean()
-
+                clip_frac = torch.greater(torch.abs(ratio -1),self.clip_param).float().mean().item()
                 if self.use_huber_loss and self.use_clipped_value_loss:
                     value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
                                                                                                 self.clip_param)
@@ -119,6 +127,7 @@ class PPO:
                 action_loss_epoch += action_loss.item()
                 dist_entropy_epoch += dist_entropy.item()
                 loss_epoch += loss.item()
+                clip_frac_epoch += clip_frac
 
 
 
@@ -133,8 +142,9 @@ class PPO:
         action_loss_epoch /= num_updates
         dist_entropy_epoch /= num_updates
         loss_epoch /= num_updates
+        clip_frac_epoch /= num_updates
 
-        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch
+        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, loss_epoch, clip_frac_epoch
 
     def act(self, state, latent, task, deterministic=False):
         return self.actor_critic.act(state=state, latent=latent, task=task, deterministic=deterministic)

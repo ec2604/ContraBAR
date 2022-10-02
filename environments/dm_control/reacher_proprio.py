@@ -9,34 +9,29 @@ import random
 from utils import helpers as utl
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-
-def rgb2gray(rgb):
-    gray = 0.2989*rgb[0]+0.587*rgb[1]+0.114*rgb[2]
-    return np.expand_dims(gray, axis=0)
-
-
 class ReacherEnv(gym.Env):
-    def __init__(self, image_size, action_repeat, max_episode_steps=200, n_tasks=2, dense=False, **kwargs):
+    def __init__(self, action_repeat, max_episode_steps=200, n_tasks=2, dense=False, **kwargs):
         super(ReacherEnv, self).__init__()
         self.env = dmc2gym.make(
             domain_name='reacher',
             task_name='easy',
             seed=1,
             visualize_reward=False,
-            from_pixels=True,
-            height=image_size,
-            width=image_size,
+            from_pixels=False,
+            # height=image_size,
+            # width=image_size,
             frame_skip=action_repeat
         )
 
         self.dense = dense
         self.num_frames = 3
-        shp = self.env.observation_space.shape
+        # self.observation_space = self.env.observation_space -2
+        #shp = self.env.observation_space.shape
         self.observation_space = gym.spaces.Box(
             low=0,
             high=1,
             #shape=((shp[0] * self.num_frames,) + shp[1:]),
-            shape=((1 * self.num_frames,) + shp[1:]),
+            shape=(self.env.observation_space.shape[0]-2,),
             dtype=self.env.observation_space.dtype
         )
         self._frames = deque([], maxlen=self.num_frames)
@@ -83,17 +78,15 @@ class ReacherEnv(gym.Env):
         """
         Reset the task, either at random (if idx=None) or the given task.
         """
-        # if idx is None:
-        if 'task' in kwargs and kwargs['task'] is not None:
-            self.set_goal(kwargs['task'])
+        if idx is None:
+            if 'task' in kwargs:
+                self.set_goal(kwargs['task'])
+            else:
+                r = random.random()*2 -1
+                self._goal = np.array([np.pi / 4, r*0.24])#self.goals[int(np.random.randint(0,len(self.goals),1))]
+                self.set_goal(self._goal)
         else:
-            r = random.random()*2 -1
-            # self._goal = np.array([np.pi / 4, r*0.24])#self.goals[int(np.random.randint(0,len(self.goals),1))]
-            self._goal = np.array([np.pi / 2, r*0.24])#self.goals[int(np.random.randint(0,len(self.goals),1))]
-
-            self.set_goal(self._goal)
-        # else:
-        #     self._goal = self.goals[idx]
+            self._goal = self.goals[idx]
 
         self.reset()
 
@@ -104,19 +97,20 @@ class ReacherEnv(gym.Env):
         where info has to include a field 'task'.
         """
         obs, reward, done, info = self.env.step(action)
-        obs_gray = rgb2gray(obs)
-        if not self.dense:
-            if self.reward(None, None) > 0:
-                obs_gray[:10,:10] = 0
-        self._frames.append(obs_gray)
+        # obs_gray = rgb2gray(obs)
+        # if not self.dense:
+        #     if self.reward(None, None) > 0:
+        #         obs_gray[:20,:20] = 0
+        # self._frames.append(obs_gray)
         # self._frames.append(obs)
 
         info['state'] = self.task_object.get_state(self.env.physics)
         if self.dense:
             info['reward_dense'] = self.reward(None, None)
             info['reward_sparse'] = self.task_object.get_sparse_reward(self.env.physics)
-        return self._get_obs(), self.reward(None, None), done, info
-        #return obs, self.reward(None, None), done, info
+        # return self._get_obs(), self.reward(None, None), done, info
+        obs_fixed = np.concatenate([obs[:2], obs[4:]])
+        return obs_fixed, self.reward(None, None), done, info
 
 
     def reward(self, state, action):
@@ -135,10 +129,11 @@ class ReacherEnv(gym.Env):
         Resetting the task is handled in the contrabar wrapper (see wrappers.py).
         """
         obs = self.env.reset()
-        for _ in range(self.num_frames):
-            self._frames.append(rgb2gray(obs))
-            # self._frames.append(obs)
-        return self._get_obs()
+        # for _ in range(self.num_frames):
+        #     self._frames.append(rgb2gray(obs))
+        #     self._frames.append(obs)
+        obs_fixed = np.concatenate([obs[:2], obs[4:]])
+        return obs_fixed
 
     def seed(self, seed=None):
         super(ReacherEnv, self).seed(seed)
@@ -150,9 +145,9 @@ class ReacherEnv(gym.Env):
         else:
             return False
 
-    def _get_obs(self):
-        assert len(self._frames) == self.num_frames
-        return np.concatenate(list(self._frames), axis=0)
+    # def _get_obs(self):
+    #     assert len(self._frames) == self.num_frames
+    #     return np.concatenate(list(self._frames), axis=0)
 
     def get_state(self):
         return self.task_object.get_state(self.env.physics)
@@ -294,8 +289,8 @@ class ReacherEnv(gym.Env):
         episode_next_obs = [torch.cat(e) for e in episode_next_obs]
         episode_actions = [torch.cat(e) for e in episode_actions]
         episode_rewards = [torch.cat(e) for e in episode_rewards]
-        kwargs['logger'].add_video('behaviour_video_ep_0', episode_prev_obs[0][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
-        kwargs['logger'].add_video('behaviour_video_ep_1', episode_prev_obs[1][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
+        # kwargs['logger'].add_video('behaviour_video_ep_0', episode_prev_obs[0][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
+        # kwargs['logger'].add_video('behaviour_video_ep_1', episode_prev_obs[1][:, 2, ...].unsqueeze(0).unsqueeze(2).to(torch.uint8), iter_idx)
 
         for j in range(num_episodes):
             # plot the movement of the reacher
@@ -316,12 +311,12 @@ class ReacherEnv(gym.Env):
                                 radius=0.01 + unwrapped_env.goal_radius if hasattr(unwrapped_env, 'goal_radius') else 0.1,
                                 alpha=0.3)
             #angle = np.linspace(np.pi / 2, np.pi /2 + np.pi, 100)
-            # angle = np.pi / 4
-            angle = np.pi / 2
+            angle = np.pi / 4
             #goal_range = 0.24 * np.array((np.cos(angle), np.sin(angle)))
             r = np.linspace(-0.24, 0.24, 100)
             goal_range_x = np.cos(angle) * r
             goal_range_y = np.sin(angle) * r
+            #plt.plot(goal_range[1], goal_range[0], 'k--', alpha=0.1)
             plt.plot(goal_range_y, goal_range_x, 'k--', alpha=0.1)
             plt.gca().add_artist(circle)
             plt.scatter(goal_y, goal_x, marker='x', color='k', s=50)
@@ -337,7 +332,8 @@ class ReacherEnv(gym.Env):
             #     num_points_semicircle = 50
             #     angles = np.linspace(np.pi / 2, np.pi / 2 + np.pi, num=num_points_semicircle)
             #     x, y = r * np.cos(angles), r * np.sin(angles)
-            #     belief = 1. - torch.sigmoid(kwargs['belief_evaluator'](episode_hidden_states[j][0])).detach().cpu().numpy().flatten()
+            #     ## Does the hidden state matter?
+            #     belief = 1. - torch.sigmoid(kwargs['belief_evaluator'](episode_hidden_states[0][-1])).detach().cpu().numpy().flatten()
             #     plt.scatter(y,x, c= belief, cmap='gray')
             #Regression
             # if j == 1 and kwargs['belief_evaluator'] is not None:
@@ -472,14 +468,10 @@ class ReacherEnv(gym.Env):
             circle = plt.Circle((goal_y, goal_x),
                                 radius=0.01 + unwrapped_env.goal_radius if hasattr(unwrapped_env, 'goal_radius') else 0.1,
                                 alpha=0.3)
-            angle = np.pi / 4
-            r = np.linspace(-0.24, 0.24, 100)
-            # goal_range = 0.2 * np.array((np.cos(angle), np.sin(angle)))
-            goal_range_x = np.cos(angle) * r
-            goal_range_y = np.sin(angle) * r
-            plt.plot(goal_range_y, goal_range_x, 'k--', alpha=0.1)
+            angle = np.linspace(np.pi / 2, np.pi /2 + np.pi, 100)
+            goal_range = 0.24 * np.array((np.cos(angle), np.sin(angle)))
+            plt.plot(goal_range[1], goal_range[0], 'k--', alpha=0.1)
             plt.gca().add_artist(circle)
-            plt.scatter(goal_y, goal_x, marker='x', color='k', s=50)
             plt.plot(episode_prev_state[j][:, 0], episode_prev_state[j][:, 1])
             plt.scatter(episode_prev_state[j][0,0], episode_prev_state[j][0, 1], color='r',marker='o')
             plt.quiver(episode_prev_state[j][:-1, 0], episode_prev_state[j][:-1, 1],

@@ -8,14 +8,15 @@ import torch.nn as nn
 
 from models.encoder import RNNCPCEncoder
 from models.cpc_modules import MLP, actionGRU, statePredictor, CPCMatrix
-from utils.helpers import get_task_dim, get_num_tasks, get_pos_grid
+from utils.helpers import get_task_dim, get_num_tasks, get_pos_grid, InfoNCE, generate_predictor_input
 from utils.storage_vae import RolloutStorage
 from collections import namedtuple
 import matplotlib.pyplot as plt
+import torch.autograd.profiler as profiler
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 CPCStats = namedtuple('cpc_stats', ['cpc_loss', 'hidden_states', 'z_dist', 'fraction_examples_reward_seen',
-                                    'fraction_trajectories_reward_seen', 'num_sampled', 'tasks'])
+                                    'fraction_trajectories_reward_seen', 'num_sampled', 'tasks', 'cosine_similarity'])
 evaluationStats = namedtuple('evaluation_stats', ['loss', 'predictions'])
 
 
@@ -41,9 +42,11 @@ class contrabarCPC:
             self.action_gru = actionGRU(input_dim=self.args.action_embedding_size, hidden_dim=self.args.latent_dim).to(
                 device)
         self.lookahead_factor = self.args.lookahead_factor if self.args.lookahead_factor else 1
-        z_dim = self.args.reward_embedding_size + self.args.state_embedding_size
+        z_dim = self.args.reward_embedding_size + self.args.state_embedding_size  # self.encoder.state_encoder.output_size#
         if not self.args.with_action_gru:
             z_dim += self.args.action_embedding_size
+        if len(self.args.encoder_layers_before_gru) > 0:
+            z_dim = self.args.encoder_layers_before_gru[-1]
         if self.args.density_model == 'bilinear':
             cpc_clf = [CPCMatrix(self.args.latent_dim,
                                  z_dim)
@@ -51,19 +54,18 @@ class contrabarCPC:
         elif self.args.density_model == 'NN':
             if self.args.with_action_gru:
                 cpc_clf = [MLP(
-                    z_dim + 2*self.args.latent_dim)
+                    z_dim + 2 * self.args.latent_dim)
                     for _ in range(1)]
             else:
                 cpc_clf = [MLP(
-                    z_dim + self.args.latent_dim)
-                    for _ in range(self.lookahead_factor)]
+                    z_dim + self.args.latent_dim) for _ in range(self.lookahead_factor)]
         else:
             raise NotImplementedError
         self.mlp = nn.ModuleList(cpc_clf).to(device)
         self.cpc_loss_func = torch.nn.CrossEntropyLoss()
         if self.args.evaluate_representation:
-            self.representation_evaluator = statePredictor(self.args.latent_dim, 150).to(device)
-            self.representation_evaluation_loss = nn.BCEWithLogitsLoss()
+            self.representation_evaluator = statePredictor(self.args.latent_dim + 3, 1).to(device)
+            self.representation_evaluation_loss = nn.MSELoss()
             self.representation_evaluator_optimizer = torch.optim.Adam(self.representation_evaluator.parameters(),
                                                                        lr=self.args.evaluator_lr)
         # initialise rollout storage for the CPC update
@@ -76,14 +78,14 @@ class contrabarCPC:
                                               action_dim=self.args.action_dim,
                                               representation_learner_buffer_add_thresh=self.args.representation_learner_buffer_add_thresh,
                                               task_dim=self.task_dim,
-                                              underlying_state_dim=2
+                                              underlying_state_dim=self.args.underlying_state_dim
                                               )
         cpc_params = [*self.encoder.parameters()] + [*self.mlp.parameters()]
         if self.args.with_action_gru:
             cpc_params += [*self.action_gru.parameters()]
         self.cpc_optimizer = torch.optim.Adam(cpc_params,
                                               lr=self.args.lr_representation_learner)
-        # self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.cpc_optimizer, milestones=[100], gamma=0.1)
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.cpc_optimizer, milestones=[1200], gamma=0.5)
 
     def initialise_encoder(self):
         """ Initialises and returns an RNN encoder """
@@ -152,7 +154,9 @@ class contrabarCPC:
             matrices = []
             first_k_steps = 16
             episode_length = 100
-            weighting_vector = np.array([1] * z_batch.shape[1] + ([1] * episode_length + [3]*first_k_steps + (episode_length - first_k_steps)*[1]) * (z_batch.shape[0] -1))
+            weighting_vector = np.array([1] * z_batch.shape[1] + (
+                    [1] * episode_length + [3] * first_k_steps + (episode_length - first_k_steps) * [1]) * (
+                                                z_batch.shape[0] - 1))
             for i in range(z_batch.shape[0]):
                 weighting_mat = np.repeat(np.expand_dims(weighting_vector.copy(), 0), z_batch.shape[1], 0)
                 matrices.append(weighting_mat)
@@ -161,14 +165,14 @@ class contrabarCPC:
             cdist = cdist * matrices
         numerator = (cdist > -1)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1))
         denom = (cdist > -1).sum(dim=-1).view(cdist.shape[0],
-                                             1)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1)).sum(dim=-1).view(cdist.shape[0], 1)
+                                              1)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1)).sum(dim=-1).view(cdist.shape[0], 1)
         if self.args.cpc_trajectory_weight_sampling:
             numerator = cdist
             denom = cdist.sum(dim=-1)
         if torch.any(denom == 0):
             return False
         obs_neg = z_batch.reshape(-1, z_batch.shape[-1])[
-            torch.multinomial(numerator / denom, negative_sampling_factor)]
+            torch.multinomial(numerator / denom, negative_sampling_factor, replacement=True)]
         return obs_neg.reshape(z_batch.shape[0], z_batch.shape[1], negative_sampling_factor, z_batch.shape[-1]).permute(
             [1, 0, 2, 3]), cdist
 
@@ -178,7 +182,7 @@ class contrabarCPC:
         block = torch.ones((z_batch.shape[1], z_batch.shape[1]), dtype=torch.int8) * -1
         cdist = torch.block_diag(*[block for _ in range(dim_cdist // z_batch.shape[1])])
 
-        top_strip = next_obs[0,0,0,:20].clone()
+        top_strip = next_obs[0, 0, 0, :20].clone()
         blank_strip = torch.zeros_like(top_strip).to(device)
 
         next_obs_negatives = next_obs.clone()
@@ -190,8 +194,9 @@ class contrabarCPC:
         next_obs_negatives[:, :, 2, :20, :][(mask) * (rewards > 0).squeeze(-1), :20, :] = top_strip.unsqueeze(0)
         next_obs_negatives[:, :, 2, :20, :][(mask) * (rewards < 1).squeeze(-1), :20, :] = blank_strip.unsqueeze(0)
         z_negatives = self.encoder.embed_input(actions=actions, states=next_obs_negatives, rewards=rewards,
-                                              with_actions=False if self.args.with_action_gru else True).unsqueeze(-2)
+                                               with_actions=False if self.args.with_action_gru else True).unsqueeze(-2)
         return z_negatives, cdist
+
     def compute_cpc_loss(self, batch=None):
         """ Returns the CPC loss """
 
@@ -200,7 +205,7 @@ class contrabarCPC:
 
         # get a mini-batch
         if batch is None:
-            prev_obs, next_obs, actions, rewards, tasks, underlying_states,\
+            prev_obs, next_obs, actions, rewards, tasks, underlying_states, \
             trajectory_lens, num_sampled = self.rollout_storage.get_batch(
                 batchsize=self.args.representation_learner_batch_num_trajs)
             # vae_prev_obs will be of size: max trajectory len x num trajectories x dimension of observations
@@ -211,6 +216,7 @@ class contrabarCPC:
             num_sampled = np.array([0])
 
         # pass through encoder (outputs will be: (max_traj_len+1) x number of rollouts x latent_dim -- includes the prior!)
+
         z_batch = self.encoder.embed_input(actions=actions, states=next_obs, rewards=rewards,
                                            with_actions=False if self.args.with_action_gru else True)
 
@@ -249,16 +255,20 @@ class contrabarCPC:
                 self.lookahead_factor, -1, self.args.action_embedding_size)
 
             hidden_for_action_gru = hidden_states[:-self.lookahead_factor, :, :].reshape(-1, hidden_states.shape[-1])
-            a_latent, _ = self.action_gru.gru1(a_for_gru, hidden_for_action_gru.unsqueeze(0))
+            a_latent, _ = self.action_gru(a_for_gru, hidden_for_action_gru.unsqueeze(0))
             a_latent = a_latent.view(self.lookahead_factor, trajectory_lens.max() - self.lookahead_factor,
                                      hidden_states.shape[1], -1)
             z_a_gru_pos = [
-                torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...], hidden_states[1:-self.lookahead_factor,...]], dim=-1).permute([1, 0, -1])
+                torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...],
+                           hidden_states[1:-self.lookahead_factor, ...]], dim=-1).permute([1, 0, -1])
                 for i in range(self.lookahead_factor)]
 
             z_a_gru_neg = [torch.cat([z_negatives[1:-self.lookahead_factor, ...],
                                       torch.unsqueeze(a_latent[i, :-1, ...], 2).expand(-1, -1,
-                                                                                       self.args.negative_factor, -1),hidden_states[:-self.lookahead_factor,...][:-1,...].unsqueeze(-2).expand(-1,-1,self.args.negative_factor,-1)],
+                                                                                       self.args.negative_factor, -1),
+                                      hidden_states[:-self.lookahead_factor, ...][:-1, ...].unsqueeze(-2).expand(-1, -1,
+                                                                                                                 self.args.negative_factor,
+                                                                                                                 -1)],
                                      dim=-1).permute([1, 0, 2, 3]) for i in range(self.lookahead_factor)]
             # z_a_gru_pos = [
             #     torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]], dim=-1).permute([1, 0, -1])
@@ -281,13 +291,23 @@ class contrabarCPC:
         if self.args.density_model == 'NN':
             if self.args.with_action_gru:
                 preds = [
-                    torch.cat([self.mlp[0](z_a_gru_pos[i]), self.mlp[0](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(-1,
+                    torch.cat([self.mlp[i](z_a_gru_pos[i]), self.mlp[i](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(-1,
                                                                                                                    1 + self.args.negative_factor)
                     for i in range(self.lookahead_factor)]
             else:
-                preds = [torch.cat([self.mlp[i](z_a_gru_pos[i]), self.mlp[i](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(-1,
-                                                                                                                        1 + self.args.negative_factor)
-                         for i in range(self.lookahead_factor)]
+                # z_a_gru_pos = torch.stack(
+                #     [z_a_gru_pos[i][:, :self.args.max_trajectory_len - self.lookahead_factor, :] for i in
+                #      range(self.lookahead_factor)], dim=-2).unsqueeze(-3)
+                # z_a_gru_neg = torch.stack(
+                #     [z_a_gru_neg[i][:, :self.args.max_trajectory_len - self.lookahead_factor, ...] for i in
+                #      range(self.lookahead_factor)], dim=-2)
+                # preds = self.mlp[0](torch.cat([z_a_gru_pos, z_a_gru_neg], dim=2))
+                # preds = torch.cat([preds[..., i, i] for i in range(self.lookahead_factor)], dim=-2).view(-1, 1 + self.args.negative_factor)
+                preds = [
+                    torch.cat([self.mlp[i](z_a_gru_pos[i]), self.mlp[i](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(
+                        -1,
+                        1 + self.args.negative_factor)
+                    for i in range(self.lookahead_factor)]
         elif self.args.density_model == 'bilinear':
             preds = [torch.cat([self.mlp[i](z_a_gru_pos[i][..., -self.args.latent_dim:],
                                             z_a_gru_pos[i][..., :-self.args.latent_dim]).squeeze(-1),
@@ -296,16 +316,25 @@ class contrabarCPC:
                                dim=-1).view(-1, 1 + self.args.negative_factor)
                      for i in range(self.lookahead_factor)]
         preds = torch.cat(preds, dim=0)
-
-        targets = torch.zeros(preds.shape[0]).long().to(device)
+        # preds = preds[torch.randperm(len(preds))[:int(self.args.subsample_cpc * len(preds))]]
+        targets = torch.zeros((preds.shape[0]), dtype=torch.long, device=device)
         cpc_loss = self.cpc_loss_func(preds, targets)
 
         fraction_examples_reward_seen = seen_reward.sum() / z_a_gru_pos[0].shape[1]
         fraction_trajectories_reward_seen = (seen_reward.sum(dim=[1, 2]) > 0).sum() / seen_reward.shape[0]
+        traj_reward_seen = torch.where(seen_reward.sum(dim=[1, 2]) > 0)
+        # if len(traj_reward_seen[0]) > 0:
+        #     traj_idx = traj_reward_seen[0][0]
+        #
+        #     hidden_cosine_sim = torch.cosine_similarity(hidden_states[1:-1, traj_idx, :],
+        #                                                     hidden_states[2:, traj_idx, :], dim=-1).detach().cpu()
+        # else:
+        hidden_cosine_sim = torch.zeros((z_batch.shape[0] - 2,))
 
-        cpc_train_stats = CPCStats(cpc_loss, hidden_states.detach().clone(), z_dist, fraction_examples_reward_seen,
+        cpc_train_stats = CPCStats(cpc_loss, hidden_states.detach().clone(), z_dist,
+                                   fraction_examples_reward_seen,
                                    fraction_trajectories_reward_seen, num_sampled,
-                                   tasks)
+                                   tasks, hidden_cosine_sim)
         return cpc_train_stats
 
     def update_cpc(self):
@@ -322,43 +351,81 @@ class contrabarCPC:
                 #     nn.utils.clip_grad_norm_(self.action_gru.parameters(), self.args.encoder_max_grad_norm)
             # update
             self.cpc_optimizer.step()
-            # self.scheduler.step()
+            self.scheduler.step()
         return cpc_train_stats
 
-
-## Classification
-    def calc_latent_evaluator_loss(self, tasks, hidden_states):
-        r = 0.2
-        num_points_semicircle = 150
-        angles = np.linspace(np.pi / 2, np.pi / 2 + np.pi, num=num_points_semicircle)
-        x, y = r * np.cos(angles), r * np.sin(angles)
-        x_task, y_task = r * torch.cos(tasks[:, 0]), r * torch.sin(tasks[:, 0])
-        task_points = torch.stack([x_task, y_task], dim=-1)
-        circ_points = torch.from_numpy(np.hstack([x.reshape(-1, 1), y.reshape(-1, 1)])).to(device)
-        circle_labels = (torch.norm(
-            (task_points.unsqueeze(1).repeat(1, num_points_semicircle, 1) - circ_points.unsqueeze(0)),
-            dim=-1) <= 0.05).float().unsqueeze(1).repeat(1, hidden_states.shape[0], 1)
-        hidden_states_for_belief = hidden_states.detach()
-        evaluation_loss = self.representation_evaluation_loss(
-            self.representation_evaluator(hidden_states_for_belief).view(-1, num_points_semicircle),
-            circle_labels.view(-1, num_points_semicircle))
-        return evaluation_loss
-
-    # #Regression
+    ## Classification
     # def calc_latent_evaluator_loss(self, tasks, hidden_states):
-    #     r = 0.2
+    #     r = 1.
+    #     hidden_states_for_belief = hidden_states[50:].detach()
+    #     # r = 0.24
+    #     num_points_semicircle = 50
+    #     angles = np.linspace(0, np.pi, num=num_points_semicircle)
+    #     # angles = np.linspace(np.pi / 2, np.pi / 2 + np.pi, num=num_points_semicircle)
+    #     x, y = r * np.cos(angles), r * np.sin(angles)
     #     x_task, y_task = r * torch.cos(tasks[:, 0]), r * torch.sin(tasks[:, 0])
     #     task_points = torch.stack([x_task, y_task], dim=-1)
-    #     task_points = task_points.unsqueeze(0).repeat(hidden_states.shape[0], 1, 1)
-    #     hidden_states_for_belief = hidden_states.detach()
+    #     # task_points = tasks
+    #     circ_points = torch.from_numpy(np.hstack([x.reshape(-1, 1), y.reshape(-1, 1)])).to(device)
+    #     circle_labels = (torch.norm(
+    #         (task_points.unsqueeze(1).repeat(1, num_points_semicircle, 1) - circ_points.unsqueeze(0)),
+    #         # dim=-1) <= 0.05).float().unsqueeze(1).repeat(1, hidden_states_for_belief.shape[0], 1)
+    #         dim=-1) <= 0.2).float().unsqueeze(1).repeat(1, hidden_states_for_belief.shape[0], 1)
     #     evaluation_loss = self.representation_evaluation_loss(
-    #         self.representation_evaluator(hidden_states_for_belief).view(-1, 2),
-    #         task_points.view(-1, 2))
+    #         self.representation_evaluator(hidden_states_for_belief).view(-1, num_points_semicircle),
+    #         circle_labels.view(-1, num_points_semicircle))
     #     return evaluation_loss
+
+    # regression - reacher
+    # def calc_latent_evaluator_loss(self, tasks, hidden_states):
+    #     # r = 1.
+    #     hidden_states_for_belief = hidden_states[50:].detach()
+    #     r = 0.24
+    #     num_points_semicircle = 50
+    #     angles = np.linspace(np.pi / 2, np.pi / 2 + np.pi, num=num_points_semicircle)
+    #     x, y = r * np.cos(angles), r * np.sin(angles)
+    #     x_task, y_task = r * torch.cos(tasks[:, 0]), r * torch.sin(tasks[:, 0])
+    #     task_points = torch.stack([x_task, y_task], dim=-1)
+    #     # task_points = tasks
+    #     circ_points = torch.from_numpy(np.hstack([x.reshape(-1, 1), y.reshape(-1, 1)])).to(device)
+    #     circle_labels = (torch.norm(
+    #         (task_points.unsqueeze(1).repeat(1, num_points_semicircle, 1) - circ_points.unsqueeze(0)),
+    #         dim=-1) <= 0.05).float().unsqueeze(1).repeat(1, hidden_states_for_belief.shape[0], 1)
+    #     # dim=-1) <= 0.2).float().unsqueeze(1).repeat(1, hidden_states_for_belief.shape[0], 1)
+    #     evaluation_loss = self.representation_evaluation_loss(
+    #         self.representation_evaluator(hidden_states_for_belief).view(-1, num_points_semicircle),
+    #         circle_labels.view(-1, num_points_semicircle))
+    #     return evaluation_loss
+
+    # # #Regression
+    # def calc_latent_evaluator_loss(self, tasks, hidden_states):
+    #     r = 1.
+    #     num_points_semicircle = 50
+    #     angles = np.linspace(0, np.pi, num=num_points_semicircle)
+    #     x, y = r * np.cos(angles), r * np.sin(angles)
+    #     x_task, y_task = r * torch.cos(tasks[:, 0]), r * torch.sin(tasks[:, 0])
+    #     task_points = torch.stack([x_task, y_task], dim=-1)
+    #     # task_points = tasks
+    #     circ_points = torch.from_numpy(np.hstack([x.reshape(-1, 1), y.reshape(-1, 1)])).to(device)
+    #     circle_labels = (torch.norm(
+    #         (task_points.unsqueeze(1).repeat(1, num_points_semicircle, 1) - circ_points.unsqueeze(0)),
+    #         dim=-1) <= 0.3).float().unsqueeze(1).repeat(1, hidden_states_for_belief.shape[0], 1)
+    #     # dim=-1) <= 0.2).float().unsqueeze(1).repeat(1, hidden_states_for_belief.shape[0], 1)
+    #     evaluation_loss = self.representation_evaluation_loss(
+    #         self.representation_evaluator(hidden_states_for_belief).view(-1, num_points_semicircle),
+    #         circle_labels.view(-1, num_points_semicircle))
+    #     return evaluation_loss
+
+    # #Regression
+    def calc_latent_evaluator_loss(self, tasks, hidden_states, train=False):
+        predictor_input, labels, _ = generate_predictor_input(hidden_states, tasks, train=train)
+        evaluation_loss = self.representation_evaluation_loss(
+            self.representation_evaluator(predictor_input), labels)
+        return evaluation_loss
 
     def update_latent_evaluator(self, tasks, hidden_states):
 
-        evaluation_loss = self.calc_latent_evaluator_loss(tasks, hidden_states)
+        evaluation_loss = self.calc_latent_evaluator_loss(tasks, hidden_states, train=True)
         self.representation_evaluator_optimizer.zero_grad()
         evaluation_loss.backward()
         self.representation_evaluator_optimizer.step()

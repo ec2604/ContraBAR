@@ -14,8 +14,8 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def semi_circle_goal_sampler():
     r = 1.0
-    #angle = random.uniform(0, np.pi)
-    angle = 0.75*np.pi
+    angle = random.uniform(0, np.pi)
+    #angle = 0.75*np.pi
     goal = r * np.array((np.cos(angle), np.sin(angle)))
     return goal
 
@@ -58,7 +58,6 @@ class PointEnv(Env):
         # we convert the actions from [-1, 1] to [-0.1, 0.1] in the step() function
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,))
         self._max_episode_steps = max_episode_steps
-        self.wind = np.array([random.random() * 0.2 - 0.1,random.random() * 0.2 - 0.1])
 
 
     def sample_task(self):
@@ -74,7 +73,6 @@ class PointEnv(Env):
     def reset_task(self, task=None):
         if task is None:
             task = self.sample_task()
-            self.wind = np.array([random.random() * 0.1 - 0.05, random.random() * 0.1 - 0.05])
         self.set_task(task)
         return task
 
@@ -94,7 +92,6 @@ class PointEnv(Env):
         assert self.action_space.contains(action), action
 
         self._state = self._state + 0.1 * action
-        self._state = self._state + self.wind
         reward = - np.linalg.norm(self._state - self._goal, ord=2)
         done = False
         ob = self._get_obs()
@@ -240,7 +237,14 @@ class PointEnv(Env):
             # plot trajectory
             axis.plot(path[:, 0], path[:, 1], '-', color=color, label=i)
             axis.scatter(*path[0, :2], marker='.', color=color, s=50)
-
+            if i == 1 and kwargs['belief_evaluator'] is not None:
+                r = 1
+                num_points_semicircle = 50
+                angles = np.linspace(0, np.pi, num=num_points_semicircle)
+                x, y = r * np.cos(angles), r * np.sin(angles)
+                belief = 1. - torch.sigmoid(
+                    kwargs['belief_evaluator'](episode_hidden_states[i][0])).detach().cpu().numpy().flatten()
+                plt.scatter(x, y, c=belief, cmap='gray')
         plt.xlim(xlim)
         plt.ylim(ylim)
         plt.xticks([])

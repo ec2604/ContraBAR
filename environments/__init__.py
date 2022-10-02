@@ -39,8 +39,42 @@ register(
     'SparseAntGoalImage-v0',
     entry_point='environments.wrappers:mujoco_wrapper',
     kwargs={'entry_point': 'environments.mujoco.ant_goal_image:SparseAntGoalEnvImage',
-            'max_episode_steps': 50},
+            'max_episode_steps': 100, 'goal_radius': 0.3},
+    max_episode_steps=100
+)
+register(
+    'CustomReach-v0',
+    entry_point='environments.panda_gym.custom_reach:CustomReachEnv',
+    kwargs={'render': False},
     max_episode_steps=50
+)
+register(
+    'SparseAntGoalImage-v1',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.ant_goal_image:SparseAntGoalEnvImage',
+            'max_episode_steps': 50, 'goal_radius': 0.3},
+    max_episode_steps=50
+)
+register(
+    'OfflineSparseAntGoalImage-v0',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.ant_goal_image:OfflineSparseAntGoalEnvImage',
+            'max_episode_steps': 100, 'goal_radius': 0.3},
+    max_episode_steps=100
+)
+register(
+    'SparseAntGoal-v0',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.ant_goal:SparseAntGoalEnv',
+            'max_episode_steps': 50, 'goal_radius': 0.3},
+    max_episode_steps=50
+)
+register(
+    'SparseAntGoal-v1',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.ant_goal:SparseAntGoalEnv',
+            'max_episode_steps': 100, 'goal_radius': 0.3},
+    max_episode_steps=100
 )
 
 
@@ -177,6 +211,24 @@ register(
     'SparseReacher-v0',
     entry_point='environments.dm_control.reacher:ReacherEnv',
     kwargs={'max_episode_steps': 50, 'image_size': 64, 'action_repeat': 4, 'dense': False},
+    max_episode_steps=50
+)
+register(
+    'SparseReacher-v1',
+    entry_point='environments.dm_control.reacher:ReacherEnv',
+    kwargs={'max_episode_steps': 10, 'image_size': 64, 'action_repeat': 4, 'dense': False},
+    max_episode_steps=10
+)
+register(
+    'SparseReacher-v2',
+    entry_point='environments.dm_control.reacher:ReacherEnv',
+    kwargs={'max_episode_steps': 8, 'image_size': 64, 'action_repeat': 4, 'dense': False},
+    max_episode_steps=8
+)
+register(
+    'SparseProprioReacher-v0',
+    entry_point='environments.dm_control.reacher_proprio:ReacherEnv',
+    kwargs={'max_episode_steps': 50, 'action_repeat': 4, 'dense': False},
     max_episode_steps=50
 )
 #

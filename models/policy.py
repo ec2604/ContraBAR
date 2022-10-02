@@ -94,6 +94,7 @@ class Policy(nn.Module):
                 else:
                     self.state_encoder = ImageEncoder(dim_state, self.args.policy_state_embedding_dim,
                                                       self.args.image_encoder_layers)
+                    # self.state_encoder = nn.Sequential(*[sc,nn.Linear(sc.output_size, self.args.policy_state_embedding_dim)])
                     curr_input_dim = curr_input_dim - dim_state[0] + self.args.policy_state_embedding_dim
         self.use_latent_encoder = self.args.policy_latent_embedding_dim is not None
         if self.pass_latent_to_policy and self.use_latent_encoder:
@@ -300,6 +301,11 @@ class DiagGaussian(nn.Module):
         init_ = lambda m: init(m,
                                init_normc_,
                                lambda x: nn.init.constant_(x, 0))
+        # init_ = lambda m: init(m,
+        #                        nn.init.orthogonal_,
+        #                        lambda x: nn.init.constant_(x, 0),
+        #                        gain=0.01)
+        self.linear = init_(nn.Linear(num_inputs, num_outputs))
 
         self.fc_mean = init_(nn.Linear(num_inputs, num_outputs))
         self.logstd = nn.Parameter(np.log(torch.zeros(num_outputs) + init_std))

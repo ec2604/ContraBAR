@@ -34,7 +34,8 @@ class RolloutStorage(object):
             self.next_state = torch.zeros((self.max_traj_len, self.max_buffer_size, *state_dim))
             self.actions = torch.zeros((self.max_traj_len, self.max_buffer_size, action_dim))
             self.rewards = torch.zeros((self.max_traj_len, self.max_buffer_size, 1))
-            self.underlying_states = torch.zeros((self.max_traj_len, self.max_buffer_size, self.underlying_state_dim))
+            if len(self.underlying_state_dim) > 0:
+                self.underlying_states = torch.zeros((self.max_traj_len, self.max_buffer_size, *self.underlying_state_dim))
             self.tasks = torch.zeros((self.max_buffer_size, task_dim))
             self.trajectory_lens = [0] * self.max_buffer_size
 
@@ -50,8 +51,8 @@ class RolloutStorage(object):
             self.running_tasks = torch.zeros((num_processes, task_dim)).to(device)
         else:
             self.running_tasks = None
-        if self.underlying_state_dim != 0:
-            self.running_underlying_states = torch.zeros((self.max_traj_len, num_processes, self.underlying_state_dim)).to(device)
+        if len(self.underlying_state_dim) != 0:
+            self.running_underlying_states = torch.zeros((self.max_traj_len, num_processes, *self.underlying_state_dim)).to(device)
         else:
             self.running_underlying_states = None
     def get_running_batch(self):
@@ -100,7 +101,7 @@ class RolloutStorage(object):
                     self.next_state[:, self.insert_idx:self.insert_idx + self.num_processes] = self.running_next_state
                     self.actions[:, self.insert_idx:self.insert_idx+self.num_processes] = self.running_actions
                     self.rewards[:, self.insert_idx:self.insert_idx+self.num_processes] = self.running_rewards
-                    if self.underlying_state_dim != 0:
+                    if len(self.underlying_state_dim) > 0:
                         self.underlying_states[:, self.insert_idx:self.insert_idx+self.num_processes] = self.running_underlying_states
                     if (self.tasks is not None) and (self.running_tasks is not None):
                         insert_shape = self.tasks[self.insert_idx:self.insert_idx+self.num_processes].shape
@@ -117,7 +118,7 @@ class RolloutStorage(object):
             self.running_actions *= 0
             if self.running_tasks is not None:
                 self.running_tasks *= 0
-            if self.underlying_state_dim != 0:
+            if len(self.underlying_state_dim) > 0:
                 self.running_underlying_states *= 0
             self.curr_timestep *= 0
 
@@ -134,7 +135,7 @@ class RolloutStorage(object):
                     self.running_actions[self.curr_timestep[i], i] = actions[i]
                     if self.running_tasks is not None:
                         self.running_tasks[i] = task[i]
-                    if self.underlying_state_dim != 0:
+                    if len(self.underlying_state_dim) > 0:
                         self.running_underlying_states[self.curr_timestep[i], i] = underlying_state[i]
                     self.curr_timestep[i] += 1
 
@@ -162,7 +163,7 @@ class RolloutStorage(object):
                                 self.rewards[:, self.insert_idx] = self.running_rewards[:, i].to('cpu')
                                 if self.tasks is not None:
                                     self.tasks[self.insert_idx] = self.running_tasks[i].to('cpu')
-                                if self.underlying_state_dim != 0:
+                                if len(self.underlying_state_dim) > 0:
                                     self.underlying_states[self.insert_idx] = self.running_underlying_states[i].to('cpu')
                                 self.trajectory_lens[self.insert_idx] = self.curr_timestep[i].clone()
                                 self.insert_idx += 1
@@ -174,7 +175,7 @@ class RolloutStorage(object):
                         self.running_actions[:, i] *= 0
                         if self.running_tasks is not None:
                             self.running_tasks[i] *= 0
-                        if self.underlying_state_dim != 0:
+                        if len(self.underlying_state_dim) >  0:
                             self.running_underlying_states[:, i] *= 0
                         self.curr_timestep[i] = 0
 
@@ -203,7 +204,7 @@ class RolloutStorage(object):
         next_obs = self.next_state[:, rollout_indices, :]
         actions = self.actions[:, rollout_indices, :]
         rewards = self.rewards[:, rollout_indices, :]
-        if self.underlying_state_dim != 0:
+        if len(self.underlying_state_dim) > 0:
             underlying_states = self.underlying_states[:, rollout_indices, :].to(device)
         else:
             underlying_states = None

@@ -32,6 +32,8 @@ def worker(remote, parent_remote, env_fn_wrapper):
                 remote.send((env.observation_space, env.action_space))
             elif cmd == 'get_task':
                 remote.send(env.get_task())
+            elif cmd == 'get_pos':
+                remote.send(env.task.get_achieved_goal())
             elif cmd == 'task_dim':
                 remote.send(env.task_dim)
             elif cmd == 'get_belief':
@@ -114,6 +116,13 @@ class SubprocVecEnv(VecEnv):
         imgs = [pipe.recv() for pipe in self.remotes]
         return imgs
 
+    def get_states(self):
+        self._assert_not_closed()
+        for pipe in self.remotes:
+            pipe.send(('render_', None))
+        imgs = [pipe.recv() for pipe in self.remotes]
+        return imgs
+
     def _assert_not_closed(self):
         assert not self.closed, "Trying to operate on a SubprocVecEnv after calling close()"
 
@@ -125,6 +134,12 @@ class SubprocVecEnv(VecEnv):
         self._assert_not_closed()
         for remote in self.remotes:
             remote.send(('get_task', None))
+        return np.stack([remote.recv() for remote in self.remotes])
+
+    def get_pos(self):
+        self._assert_not_closed()
+        for remote in self.remotes:
+            remote.send(('get_pos', None))
         return np.stack([remote.recv() for remote in self.remotes])
 
     def get_belief(self):
