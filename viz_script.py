@@ -13,7 +13,15 @@ if __name__ == '__main__':
     args = args_sparse_panda_reacher_varibad.get_args(rest_args)
     # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_90__16:09_21:25:28/'
     # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_16__23:09_20:19:52/'
-    model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_21__28:09_20:57:43/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_21__28:09_20:57:43/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_22__29:09_08:42:54/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_28__03:10_10:28:13/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_32__06:10_10:34:02/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_36__07:10_20:29:13/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_30__05:10_16:42:57/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_38__10:10_09:41:21/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_42__10:10_14:36:20/'
+    model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_43__10:10_14:36:50//'
 
 
     with open(model_location + 'models/env_rew_rms.pkl', 'rb') as f:

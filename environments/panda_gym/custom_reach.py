@@ -88,7 +88,7 @@ class CustomReach(Task):
         d = distance(achieved_goal, desired_goal)
         r = None
         if self.reward_type == "sparse":
-            r = float(d < self.distance_threshold)
+            r = float(d < self.distance_threshold)# + float(d > self.distance_threshold)*(-1)
         else:
             r = -d
         return r
@@ -98,7 +98,7 @@ class CustomReachEnv(RobotTaskEnv):
     """Robotic task goal env, as the junction of a task and a robot.
     Args:
         robot (PyBulletRobot): The robot.
-        task (Task): The task.
+        task (task): The task.
     """
 
     metadata = {"render.modes": ["human", "rgb_array"]}
@@ -174,12 +174,13 @@ class CustomReachEnv(RobotTaskEnv):
         self.sim.remove_state(state_id)
 
     def step(self, action: np.ndarray):
-        self.robot.set_action(action)
+        act = action
+        self.robot.set_action(act)
         self.sim.step()
         obs = self._get_obs()
         done = False
         info = {"is_success": self.task.is_success(self.task.get_achieved_goal(), self.task.get_goal())}
-        reward = self.task.compute_reward(self.task.get_achieved_goal(), self.task.get_goal(), info)
+        reward = self.task.compute_reward(self.task.get_achieved_goal(), self.task.get_goal(), info)# - 0.1*np.linalg.norm(action)
         assert isinstance(reward, float)  # needed for pytype cheking
         return obs, reward, done, info
 
@@ -362,42 +363,43 @@ class CustomReachEnv(RobotTaskEnv):
         # kwargs['logger'].add_video('behaviour_video_rollout_3', np.transpose(np.stack([imgs[2][:-1]]), axes=[0, 1, 4, 2, 3]),
         #                            iter_idx)
         #
-        curr_task = torch.tensor(env.get_task(),device=device)
+        # curr_task = torch.tensor(env.get_task(),device=device)
         # predictor_input, _, (x,y,z) = utl.generate_predictor_input(episode_hidden_states, curr_task)
         # rewards = torch.sigmoid(kwargs['belief_evaluator'](predictor_input)).squeeze(1)
-        thetas = np.linspace(-np.pi / 2, np.pi / 2, 1000)
-        r = 0.15
-        sc_x = r*np.cos(thetas)
-        sc_y = r*np.sin(thetas)
+        # thetas = np.linspace(-np.pi / 2, np.pi / 2, 1000)
+        # r = 0.15
+        # sc_x = r*np.cos(thetas)
+        # sc_y = r*np.sin(thetas)
         # dx = (x[1] - x[0]) / 2.
         # dy = (y[1] - y[0]) / 2.
         # extent = [x[0] - dx, x[-1] + dx, y[0] - dy, y[-1] + dy]
-        belief_video = []
-        for i in range(len(pos_episodes)):
+        # belief_video = []
+        # for i in range(len(pos_episodes)):
         # for i in range(rewards.shape[0]):
-            fig, ax = plt.subplots()
+        #     fig, ax = plt.subplots()
             # plt.imshow(rewards[i].reshape(len(x),len(x)).detach().cpu().numpy(), extent=extent, cmap='gray', vmin=0, vmax=1, origin='lower')
             # plt.colorbar()
-            ax.add_patch(plt.Circle(xy=curr_task[0][:2].detach().cpu().numpy(), radius=0.05, alpha=0.4, color='g'))
-            x_pos, y_pos = pos_episodes[(i//49)*49:i+1, 0 ], pos_episodes[49*(i // 49) :i+1, 1]
-            plt.plot(sc_x, sc_y, alpha=0.5, c='m',)
-            plt.plot(x_pos, y_pos, alpha=0.8,label=f'Episode {i // 50}, step: {i}')
-            plt.legend()
-            canvas = FigureCanvas(fig)
-            canvas.draw()
-            buf = canvas.buffer_rgba()
-            belief_arr = np.asarray(buf)
-            belief_video.append(belief_arr)
-            plt.close()
-        fps = 10
-        belief_video = np.stack(belief_video)
-        size = belief_video.shape[1:3]
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-        out = cv2.VideoWriter(image_folder + '/test_seed_21_.avi', fourcc, fps, (size[1], size[0]))
-        for img in belief_video:
-            img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-            out.write(img)
-        out.release()
+            # ax.add_patch(plt.Circle(xy=curr_task[0][:2].detach().cpu().numpy(), radius=0.05, alpha=0.4, color='g'))
+            # x_pos, y_pos = pos_episodes[(i//49)*49:i+1, 0 ], pos_episodes[49*(i // 49) :i+1, 1]
+            # plt.plot(sc_x, sc_y, alpha=0.5, c='m',)
+            # plt.plot(x_pos, y_pos, alpha=0.8,label=f'Episode {i // 50}, step: {i}')
+            # plt.legend()
+            # canvas = FigureCanvas(fig)
+            # canvas.draw()
+            # buf = canvas.buffer_rgba()
+            # belief_arr = np.asarray(buf)
+            # belief_video.append(belief_arr)
+            # plt.close()
+        # fps = 10
+        # belief_video = np.stack(belief_video)
+        # size = belief_video.shape[1:3]
+        # fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        # print("saving to: ", image_folder + '/test_seed_43.avi', flush=True)
+        # out = cv2.VideoWriter(image_folder + '/test_seed_43.avi', fourcc, fps, (size[1], size[0]))
+        # for img in belief_video:
+        #     img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+        #     out.write(img)
+        # out.release()
         # video = np.expand_dims(np.stack(belief_video), 0)
         # video =   np.transpose(video, axes=[0, 1, 4, 2, 3])
         # kwargs['logger'].add_video('belief', video, iter_idx)

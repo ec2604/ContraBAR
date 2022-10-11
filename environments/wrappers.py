@@ -4,7 +4,6 @@ from gym import spaces
 from gym.envs.registration import load
 
 from environments.mujoco import rand_param_envs
-
 try:
     # this is to suppress some warnings (in the newer mujoco versions)
     gym.logger.set_level(40)

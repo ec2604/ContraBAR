@@ -1075,7 +1075,7 @@ Scalable oversight of RL systems may require a solution to this challenge [Amode
 .. [Knox09] Knox, W. a Bradley, and Stnone d Pettone. "Interactively shaping agents via hunforcement: The TAMER framework." Proceedings of the fifth international conference on Knowledge capture. ACM, 2009.
 .. [Knox10] Knox, W. Bradley, and Peter Stone. "Combining manual feedback with subsequent MDP reward signals for reinforcement learning." Proceedings of the 9th International Conference on Autonomous Agents and Multiagent Systems: Volume 1. 2010.
 .. [Daniel14] Daniel, Christian, et al. "Active reward learning." Proceedings of Robotics Science & Systems. 2014.
-.. [Peng16] Peng, Bei, et al. "A Need for Speed: Adapting Agent Action Speed to Improve Task Learning from Non-Expert Humans." Proceedings of the 2016 International Conference on Autonomous Agents & Multiagent Systems. International Foundation for Autonomous Agents and Multiagent Systems, 2016.
+.. [Peng16] Peng, Bei, et al. "A Need for Speed: Adapting Agent Action Speed to Improve task Learning from Non-Expert Humans." Proceedings of the 2016 International Conference on Autonomous Agents & Multiagent Systems. International Foundation for Autonomous Agents and Multiagent Systems, 2016.
 .. [Griffith13] Griffith, Shane, et al. "Policy shaping: Integrating human feedback with reinforcement learning." Advances in Neural Information Processing Systems. 2013.
 .. [Christiano15] `AI Control <https://medium.com/ai-control/>`_
 """

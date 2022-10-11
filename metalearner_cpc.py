@@ -29,7 +29,7 @@ class MetaLearner:
     """
 
     def __init__(self, args):
-        model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_16__23:09_20:19:52/'
+        # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_90__16:09_21:25:28/'
         self.args = args
         utl.seed(self.args.seed, self.args.deterministic_execution)
 
@@ -52,6 +52,7 @@ class MetaLearner:
                                   tasks=None
                                   )
 
+
         if self.args.single_task_mode:
             # get the current tasks (which will be num_process many different tasks)
             self.train_tasks = self.envs.get_task()
@@ -63,7 +64,7 @@ class MetaLearner:
             self.envs = make_vec_envs(env_name=args.env_name, seed=args.seed, num_processes=args.num_processes,
                                       gamma=args.policy_gamma, device=device,
                                       episodes_per_task=self.args.max_rollouts_per_task,
-                                      normalise_rew=args.norm_rew_for_policy, ret_rms=a,#None,
+                                      normalise_rew=args.norm_rew_for_policy, ret_rms=None,
                                       tasks=self.train_tasks
                                       )
             # save the training tasks so we can evaluate on the same envs later

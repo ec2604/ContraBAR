@@ -21,7 +21,7 @@ class Task(object):
             raise error.Error('Must provide at least one of max_timesteps and max_seconds for {}'.format(self))
 
     def __str__(self):
-        return 'Task<env_id={} trials={} max_timesteps={} max_seconds={} reward_floor={} reward_ceiling={}>'.format(
+        return 'task<env_id={} trials={} max_timesteps={} max_seconds={} reward_floor={} reward_ceiling={}>'.format(
             self.env_id, self.trials, self.max_timesteps, self.max_seconds, self.reward_floor, self.reward_ceiling)
 
 

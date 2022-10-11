@@ -61,7 +61,7 @@ def reset_env(env, args, indices=None, state=None, **kwargs):
 
 def squash_action(action, args):
     if args.norm_actions_post_sampling:
-        return 0.3 * torch.tanh(action)
+        return torch.tanh(action)
     else:
         return action
 
@@ -139,15 +139,20 @@ def update_linear_schedule(optimizer, epoch, total_num_epochs, initial_lr):
 class FeatureExtractor(nn.Module):
     """ Used for extrating features for states/actions/rewards """
 
-    def __init__(self, input_size, output_size, activation_function, same=False):
+    def __init__(self, input_size, output_size, activation_function, same=False, mid=None):
         super(FeatureExtractor, self).__init__()
         self.output_size = output_size
         self.activation_function = activation_function
         self.same = same
+        self.mid = mid
         if self.output_size != 0:
             if not self.same:
-                self.fc_1 = nn.Linear(input_size, output_size // 2)
-                self.fc_2 = nn.Linear(output_size // 2, output_size)
+                if mid is None:
+                    self.fc_1 = nn.Linear(input_size, output_size // 2)
+                    self.fc_2 = nn.Linear(output_size // 2, output_size)
+                else:
+                    self.fc_1 = nn.Linear(input_size, mid)
+                    self.fc_2 = nn.Linear(mid, output_size)
             else:
                 self.layer = nn.Identity()
         else:
@@ -155,6 +160,10 @@ class FeatureExtractor(nn.Module):
 
     def forward(self, inputs):
         if self.output_size != 0:
+            if hasattr(self, 'mid')  and self.mid is not None:
+                output = self.activation_function(self.fc_1(inputs))
+                output = self.fc_2(output)
+                return output
             if not self.same:
                 output = self.activation_function(self.fc_1(inputs))
                 output = self.fc_2(output)
@@ -499,3 +508,66 @@ def collect_data(env, args, policy, encoder=None ):
     episode_rewards = torch.concat([torch.cat(e, dim=1) for e in episode_rewards], dim=1)
     return episode_hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
            episode_returns, episode_pos, task
+
+# from rl_games.common import env_configurations, vecenv
+# from rl_games.common.algo_observer import AlgoObserver
+# from rl_games.algos_torch import torch_ext
+# from isaacgymenvs.utils.utils import set_seed
+# import torch
+# import numpy as np
+# from typing import Callable
+#
+# from environments.isaacgym import quadcopter_bamdp
+#
+# def get_rlgames_env_creator(
+#         # used to create the vec task
+#         seed: int,
+#         task_config: dict,
+#         task_name: str,
+#         sim_device: str,
+#         rl_device: str,
+#         graphics_device_id: int,
+#         headless: bool,
+#         # Used to handle multi-gpu case
+#         multi_gpu: bool = False,
+#         post_create_hook: Callable = None,
+#         virtual_screen_capture: bool = False,
+#         force_render: bool = False,
+# ):
+#     """Parses the configuration parameters for the environment task and creates a VecTask
+#     Args:
+#         task_config: environment configuration.
+#         task_name: Name of the task, used to evaluate based on the imported name (eg 'Trifinger')
+#         sim_device: The type of env device, eg 'cuda:0'
+#         rl_device: Device that RL will be done on, eg 'cuda:0'
+#         graphics_device_id: Graphics device ID.
+#         headless: Whether to run in headless mode.
+#         multi_gpu: Whether to use multi gpu
+#         post_create_hook: Hooks to be called after environment creation.
+#             [Needed to setup WandB only for one of the RL Games instances when doing multiple GPUs]
+#         virtual_screen_capture: Set to True to allow the users get captured screen in RGB array via `env.render(mode='rgb_array')`.
+#         force_render: Set to True to always force rendering in the steps (if the `control_freq_inv` is greater than 1 we suggest stting this arg to True)
+#     Returns:
+#         A VecTaskPython object.
+#     """
+#     def create_rlgpu_env():
+#         """
+#         Creates the task from configurations and wraps it using RL-games wrappers if required.
+#         """
+#
+#         # create native task and pass custom config
+#         env = quadcopter_bamdp.QuadcopterBAMDP(
+#             cfg=task_config,
+#             rl_device=rl_device,
+#             sim_device=sim_device,
+#             graphics_device_id=graphics_device_id,
+#             headless=headless,
+#             virtual_screen_capture=virtual_screen_capture,
+#             force_render=force_render,
+#         )
+#
+#         if post_create_hook is not None:
+#             post_create_hook()
+#
+#         return env
+#     return create_rlgpu_env
