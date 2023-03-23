@@ -208,8 +208,11 @@ class AntEnv(MujocoEnv):
 
             plt.xlabel('x-position', fontsize=15)
             plt.ylabel('y-position (ep {})'.format(i), fontsize=15)
-            plt.xlim(-1.2, 1.2)
-            plt.ylim(-0.5, 1.2)
+            min_dim = -3.5
+            max_dim = 3.5
+            span = max_dim - min_dim
+            plt.xlim(min_dim - 0.05 * span, max_dim + 0.05 * span)
+            plt.ylim(min_dim - 0.05 * span, max_dim + 0.05 * span)
 
             plt.tight_layout()
             kwargs['logger'].add_figure(f'belief_{i}', figure, iter_idx)

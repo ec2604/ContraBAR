@@ -82,6 +82,7 @@ def get_args(rest_args):
     parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
     parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
     parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
+    parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--lr_representation_learner', type=float, default=7e-5)
     parser.add_argument('--subsample_cpc', type=float, default=1.)
     parser.add_argument('--num_trajs_representation_learning_buffer', type=int, default=1000,
@@ -99,7 +100,7 @@ def get_args(rest_args):
     parser.add_argument('--num_representation_learner_updates', type=int, default=1,
                         help='how many VAE update steps to take per meta-iteration')
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
-    parser.add_argument('--underlying_state_dim', type=int, default=0)
+    parser.add_argument('--underlying_state_dim', default=())
     parser.add_argument('--kl_weight', type=float, default=0.1, help='weight for the KL term')
 
     parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,

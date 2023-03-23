@@ -15,11 +15,11 @@ def rgb2gray(rgb):
     return np.expand_dims(gray, axis=0)
 
 
-class ReacherEnv(gym.Env):
+class TurnEnv(gym.Env):
     def __init__(self, image_size, action_repeat, max_episode_steps=200, n_tasks=2, dense=False, **kwargs):
-        super(ReacherEnv, self).__init__()
+        super(TurnEnv, self).__init__()
         self.env = dmc2gym.make(
-            domain_name='reacher',
+            domain_name='turn',
             task_name='easy',
             seed=1,
             visualize_reward=False,

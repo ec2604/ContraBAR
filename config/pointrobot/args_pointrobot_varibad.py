@@ -81,12 +81,16 @@ def get_args(rest_args):
     # general
     parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
     parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
-    parser.add_argument('--lr_representation_learner', type=float, default=5e-4)
+    parser.add_argument('--lr_representation_learner', type=float, default=1e-4)
     parser.add_argument('--subsample_cpc', type=float, default=1.)
     parser.add_argument('--num_trajs_representation_learning_buffer', type=int, default=1000,
                         help='how many trajectories (!) to keep in VAE buffer')
-    parser.add_argument('--underlying_state_dim', type=int, default=0)
+    parser.add_argument('--underlying_state_dim', default=())
     parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
+    parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
+    parser.add_argument('--augment_for_policy', type=bool, default=False, help='weight trajectory steps?')
+
+
     parser.add_argument('--precollect_len', type=int, default=12000,
                         help='how many frames to pre-collect before training begins (useful to fill VAE buffer)')
     parser.add_argument('--representation_learner_buffer_add_thresh', type=float, default=1,
@@ -104,13 +108,13 @@ def get_args(rest_args):
                         help='split batches up by task (to save memory or if tasks are of different length)')
     parser.add_argument('--split_batches_by_elbo', type=boolean_argument, default=False,
                         help='split batches up by elbo term (to save memory of if ELBOs are of different length)')
-    parser.add_argument('--evaluate_representation', type=boolean_argument, default=True, help='train MLP to evaluate latent, without gradients flowing back')
+    parser.add_argument('--evaluate_representation', type=boolean_argument, default=False, help='train MLP to evaluate latent, without gradients flowing back')
     parser.add_argument('--evaluator_lr', type=float, default=1e-3, help='lr for MLP to evaluate representation')
     parser.add_argument('--evaluate_start_iter', type=int, default=6000, help='lookahead for CPC')
 # - encoder
-    parser.add_argument('--action_embedding_size', type=int, default=16)
+    parser.add_argument('--action_embedding_size', type=int, default=0)
     parser.add_argument('--state_embedding_size', type=int, default=16)
-    parser.add_argument('--reward_embedding_size', type=int, default=16)
+    parser.add_argument('--reward_embedding_size', type=int, default=0)#16
     parser.add_argument('--encoder_layers_before_gru', nargs='+', type=int, default=[])
     parser.add_argument('--encoder_gru_hidden_size', type=int, default=128, help='dimensionality of RNN hidden state')
     parser.add_argument('--encoder_layers_after_gru', nargs='+', type=int, default=[])

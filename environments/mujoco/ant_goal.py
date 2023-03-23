@@ -6,7 +6,7 @@ from environments.mujoco.ant import AntEnv
 import torch
 
 class AntGoalEnv(AntEnv):
-    def __init__(self, max_episode_steps=50):
+    def __init__(self, max_episode_steps=200):
         self.set_task(self.sample_tasks(1)[0])
         self._max_episode_steps = max_episode_steps
         self.task_dim = 2
@@ -41,10 +41,10 @@ class AntGoalEnv(AntEnv):
         )
 
     def sample_tasks(self, num_tasks):
-        a = np.array([random.random() for _ in range(num_tasks)]) * np.pi
+        a = np.array([random.random() for _ in range(num_tasks)]) * 2*np.pi
         #r = 1 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
         #a = np.array([0.75 for _ in range(num_tasks)]) * np.pi
-        r = 1
+        r = 1 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
         #self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
         return np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
 

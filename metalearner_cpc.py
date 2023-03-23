@@ -1,6 +1,6 @@
 import os
 import time
-import wandb
+# import wandb
 import gym
 import numpy as np
 import torch
@@ -29,7 +29,7 @@ class MetaLearner:
     """
 
     def __init__(self, args):
-        # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_90__16:09_21:25:28/'
+        model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_90__16:09_21:25:28/'
         self.args = args
         utl.seed(self.args.seed, self.args.deterministic_execution)
 
@@ -37,8 +37,8 @@ class MetaLearner:
         self.num_updates = int(args.num_frames) // args.policy_num_steps // args.num_processes
         self.frames = 0
         self.iter_idx = -1
-        wandb.init(project='varibad_cpc', config=self.args, tags=[self.args.env_name], sync_tensorboard=True,
-                   name=self.args.exp_label + '_' + str(args.seed) + '_' + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S'), dir='/mnt/data/erac/')
+        # wandb.init(project='varibad_cpc', config=self.args, tags=[self.args.env_name], sync_tensorboard=True,
+        #            name=self.args.exp_label + '_' + str(args.seed) + '_' + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S'), dir='/mnt/data/erac/')
         # initialise tensorboard logger
         self.logger = TBLogger(self.args, self.args.exp_label)
 
@@ -48,7 +48,7 @@ class MetaLearner:
         self.envs = make_vec_envs(env_name=args.env_name, seed=args.seed, num_processes=args.num_processes,
                                   gamma=args.policy_gamma, device=device,
                                   episodes_per_task=self.args.max_rollouts_per_task,
-                                  normalise_rew=args.norm_rew_for_policy, ret_rms=None,#a,
+                                  normalise_rew=args.norm_rew_for_policy, ret_rms=None,
                                   tasks=None
                                   )
 
@@ -176,7 +176,6 @@ class MetaLearner:
             self.policy_storage.hidden_states[0].copy_(hidden_state.squeeze(0))
             # rollout policies for a few steps
             for step in range(self.args.policy_num_steps):
-
                 # sample actions from policy
                 with torch.no_grad():
                     value, action = utl.select_action_cpc(args=self.args, policy=self.policy, deterministic=False,
@@ -307,6 +306,7 @@ class MetaLearner:
         Here the policy is updated for good average performance across tasks.
         :return:
         """
+        evaluator_loss = None
         # update policy (if we are not pre-training, have enough data in the representation learner buffer, and are not at iteration 0)
         if self.iter_idx >= self.args.pretrain_len and self.iter_idx > 0:
 
@@ -324,7 +324,6 @@ class MetaLearner:
             #     self.policy = self.initialise_policy()
             policy_train_stats = self.policy.policy_update(policy_storage=self.policy_storage)
             representation_learner_train_stats = self.cpc_encoder.update_cpc()
-            evaluator_loss = None
             if self.args.evaluate_representation and self.iter_idx >= self.args.evaluate_start_iter:
                 evaluator_loss = self.cpc_encoder.update_latent_evaluator(
                     representation_learner_train_stats.tasks, representation_learner_train_stats.hidden_states)
@@ -401,7 +400,7 @@ class MetaLearner:
                 self.logger.add('return_std_per_iter/episode_{}'.format(k + 1), returns_std[k], self.iter_idx)
                 self.logger.add('return_std_per_frame/episode_{}'.format(k + 1), returns_std[k], self.frames)
             self.logger.add('delta_avg_from_intial', delta_from_initial, self.iter_idx)
-            wandb.log({'return_avg_per_iter_episode_1': returns_avg[0]}, step=self.iter_idx)
+            # wandb.log({'return_avg_per_iter_episode_1': returns_avg[0]}, step=self.iter_idx)
             self.log_cpc_stats(stats=eval_cpc_stats, log_prefix='eval')
             if self.args.evaluate_representation and self.args.evaluate_start_iter < self.iter_idx:
                 self.log_evaluator_stats('eval', eval_evaluator_stats)
@@ -431,7 +430,9 @@ class MetaLearner:
 
                 torch.save(self.policy.actor_critic, os.path.join(save_path, f"policy{idx_label}.pt"))
                 torch.save(self.cpc_encoder.encoder, os.path.join(save_path, f"encoder{idx_label}.pt"))
-
+                if self.args.with_action_gru:
+                    torch.save(self.cpc_encoder.action_gru, os.path.join(save_path, f"action_gru{idx_label}.pt"))
+                torch.save(self.cpc_encoder.mlp, os.path.join(save_path, f"cpc_mlp{idx_label}.pt"))
                 # save normalisation params of envs
                 if self.args.norm_rew_for_policy:
                     rew_rms = self.envs.venv.ret_rms

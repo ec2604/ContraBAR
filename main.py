@@ -23,10 +23,10 @@ from config.mujoco import \
     args_ant_goal_humplik, \
     args_walker_multitask, args_walker_expert, args_walker_avg, args_walker_rl2, args_walker_varibad, \
     args_humanoid_dir_varibad, args_humanoid_dir_rl2, args_humanoid_dir_multitask, args_humanoid_dir_expert, \
-    args_ant_goal_image_varibad, args_sparse_ant_goal_image_varibad, args_sparse_ant_goal_varibad, args_offline_sparse_ant_goal_image_varibad
+    args_ant_goal_image_varibad, args_sparse_ant_goal_image_varibad, args_sparse_ant_goal_varibad, args_offline_sparse_ant_goal_image_varibad, args_peg_insertion_image_varibad
 from config.dm_control import args_reacher_varibad, args_sparse_reacher_varibad, args_sparse_proprio_reacher_varibad
 from config.procgen import args_procgen_maze
-from config.panda_gym import args_sparse_panda_reacher_varibad
+from config.panda_gym import args_sparse_panda_reacher_varibad, args_sparse_panda_reacher_wind_varibad
 from environments.parallel_envs import make_vec_envs
 from learner import Learner
 from metalearner_cpc import MetaLearner
@@ -65,6 +65,9 @@ def main():
         args = args_pointrobot_image_varibad.get_args(rest_args)
     # --- MUJOCO ---
 
+    # - PegInsertion -
+    elif env == 'peg_insertion_image':
+        args = args_peg_insertion_image_varibad.get_args(rest_args)
     # - CheetahDir -
     elif env == 'cheetah_dir_multitask':
         args = args_cheetah_dir_multitask.get_args(rest_args)
@@ -154,6 +157,8 @@ def main():
     # - PandaGym
     elif env == 'panda_reacher':
         args = args_sparse_panda_reacher_varibad.get_args(rest_args)
+    elif env == 'panda_reacher_wind':
+        args = args_sparse_panda_reacher_wind_varibad.get_args(rest_args)
     else:
         raise Exception("Invalid Environment")
 

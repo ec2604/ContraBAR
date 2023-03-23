@@ -4,8 +4,8 @@ from models.cpc_modules import statePredictor
 from utils.helpers import generate_predictor_input as gpi
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-
-def generate_train_input(hidden_states, tasks):
+## for panda reacher
+def generate_panda_train_input(hidden_states, tasks):
     r = 0.3
     z_ = 0.15 / 2
     l = 100
@@ -17,6 +17,22 @@ def generate_train_input(hidden_states, tasks):
                                  size=hidden_states.shape[0] * hidden_states.shape[1])
     repeated_tasks = tasks.unsqueeze(1).repeat(1, hidden_states.shape[1], 1)
     repeated_tasks = repeated_tasks + torch.normal(0, 0.05/4,size=repeated_tasks.shape).to(device)
+    square_states = torch.from_numpy(square_states[state_idx].reshape(*repeated_tasks.shape)).to(device)
+    positives = torch.cat([hidden_states, repeated_tasks], dim=-1)
+    negatives = torch.cat([hidden_states, square_states], dim=-1)
+    return positives, negatives
+
+def generate_panda_wind_train_input(hidden_states, tasks):
+    r = 0.5
+    z_ = 0#0.15 / 2
+    l = 50
+    x_ = y_ = np.linspace(-r, r, l)
+    x, y, z = np.meshgrid(x_, y_, z_)
+    square_states = np.dstack((x, y, z)).reshape(-1, 3).astype(np.float32)
+    np.random.shuffle(square_states)
+    state_idx = np.random.choice(np.arange(square_states.shape[0]), replace=True,
+                                 size=hidden_states.shape[0] * hidden_states.shape[1])
+    repeated_tasks = tasks.unsqueeze(1).repeat(1, hidden_states.shape[1], 1)
     square_states = torch.from_numpy(square_states[state_idx].reshape(*repeated_tasks.shape)).to(device)
     positives = torch.cat([hidden_states, repeated_tasks], dim=-1)
     negatives = torch.cat([hidden_states, square_states], dim=-1)
@@ -44,14 +60,14 @@ def generate_predictor_input(hidden_states, tasks, reward_radius=0.05, train=Fal
 if __name__ == '__main__':
     hidden_size = 50
     task_size = 3
-    lr = 8e-4
+    lr = 8e-3
     representation_evaluator = statePredictor(hidden_size + task_size, 1).to(device)
     representation_evaluation_loss = torch.nn.BCEWithLogitsLoss()
     representation_evaluator_optimizer = torch.optim.Adam(representation_evaluator.parameters(),
                                                           lr=lr)
-    data = np.load('/mnt/data/erac/logs_CustomReach-v0/panda_belief_ds_seed_seed_16.npz')
-    hidden = torch.from_numpy(data['hidden_buffer'])
-    task = torch.from_numpy(data['task_buffer'])
+    data = np.load('/mnt/data/erac/logs_CustomReachWind-v0/panda_wind_belief_ds_seed_88.npz')#np.load('/mnt/data/erac/logs_CustomReach-v0/panda_wind_belief_ds_seed_seed_16.npz')
+    hidden = torch.from_numpy(data['hidden_buffer'][:-16])
+    task = torch.from_numpy(data['task_buffer'])[:-16][...,3:]
     traj_idx = np.arange(len(hidden))
     np.random.shuffle(traj_idx)
 
@@ -61,13 +77,14 @@ if __name__ == '__main__':
 
     test_hidden = hidden[traj_idx[train_split:]]
     test_task = task[traj_idx[train_split:]]
-    num_batches = 60000
+    num_batches = 5000
+    # num_batches = 2700
     batch_size = 512
     for i in range(num_batches):
-        batch_idx = np.random.choice(np.arange(800), size=batch_size, replace=False)
+        batch_idx = np.random.choice(np.arange(train_split), size=batch_size, replace=False)
         batch_hidden = train_hidden[batch_idx].to(device)
         batch_task = train_task[batch_idx].to(device)
-        positives, negatives = generate_train_input(batch_hidden, batch_task)
+        positives, negatives = generate_panda_wind_train_input(batch_hidden, batch_task)
         positive_loss = representation_evaluation_loss(representation_evaluator(positives).reshape(-1,1),
                                                          torch.ones(positives.shape[:2],device=device).float().reshape(-1,1))
         negative_loss = representation_evaluation_loss(representation_evaluator(negatives).reshape(-1,1),
@@ -82,7 +99,7 @@ if __name__ == '__main__':
         if (i % 50) == 0:
             batch_hidden = test_hidden.to(device)
             batch_task = test_task.to(device)
-            positives, negatives = generate_train_input(batch_hidden, batch_task)
+            positives, negatives = generate_panda_wind_train_input(batch_hidden, batch_task)
             positive_loss = representation_evaluation_loss(representation_evaluator(positives).reshape(-1, 1),
                                                            torch.ones(positives.shape[:2],
                                                                       device=device).float().reshape(-1, 1))
@@ -92,5 +109,6 @@ if __name__ == '__main__':
             eval_loss = positive_loss + negative_loss
             print(f'===Eval loss, i={i}: {eval_loss}',flush=True)
             print(f'===Diff, i={i}: {loss - eval_loss}',flush=True)
-        torch.save(representation_evaluator, "/mnt/data/erac/logs_CustomReach-v0/belief_panda_seed_16.pt")
+        # torch.save(representation_evaluator, "/mnt/data/erac/logs_CustomReach-v0/belief_panda_seed_16.pt")
+        torch.save(representation_evaluator, "/mnt/data/erac/logs_CustomReachWind-v0/belief_panda_seed_88.pt")
 

@@ -128,6 +128,8 @@ def evaluate(args,
              **kwargs
              ):
     env_name = args.env_name
+    if 'env_name' in kwargs:
+        env_name = kwargs['env_name']
     if hasattr(args, 'test_env_name'):
         env_name = args.test_env_name
     if num_episodes is None:
@@ -207,8 +209,8 @@ def evaluate(args,
                 # observe reward and next obs
                 [state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(envs, action, args)
                 done_mdp = [info['done_mdp'] for info in infos]
-                # if len(args.underlying_state_dim) > 0:
-                    # underlying_states = torch.from_numpy(np.stack([info['state'] for info in infos],axis=0)).to(device)
+                if len(args.underlying_state_dim) > 0:
+                    underlying_states = torch.from_numpy(np.stack([info['state'] for info in infos],axis=0)).to(device)
                 # underlying_states = torch.from_numpy(
                 #     np.stack([method for method in envs.venv.get_images_()])).to(device)
                 # if done[0]:
@@ -239,8 +241,8 @@ def evaluate(args,
                 next_state_per_episode[episode_idx, step_idx, ...] = state.clone()
                 rewards_per_episode[episode_idx, step_idx, ...] = rew_raw.clone()
                 actions_per_episode[episode_idx, step_idx, ...] = action.clone()
-                # if len(args.underlying_state_dim) > 0:
-                #     underlying_state_per_episode[episode_idx, step_idx, ...] = underlying_states.clone()
+                if len(args.underlying_state_dim) > 0:
+                    underlying_state_per_episode[episode_idx, step_idx, ...] = underlying_states.clone()
                 # add rewards
                 curr_returns_per_episode += rew_raw.view(-1).clone()
                 returns_per_episode[i, task_count] = curr_returns_per_episode.clone()
@@ -253,8 +255,8 @@ def evaluate(args,
 
 
         envs.close()
-        # if len(args.underlying_state_dim) > 0:
-        #     underlying_state_per_episode_list.append(underlying_state_per_episode.clone())
+        if len(args.underlying_state_dim) > 0:
+            underlying_state_per_episode_list.append(underlying_state_per_episode.clone())
         rewards_per_episode_list.append(rewards_per_episode.clone())
         prev_state_per_episode_list.append(prev_state_per_episode.clone())
         next_state_per_episode_list.append(next_state_per_episode.clone())
@@ -331,7 +333,7 @@ def visualise_behaviour(args,
                                                  logger=logger,
                                                  )
     else:
-        traj = get_test_rollout(args, env, policy, encoder)
+        traj = get_test_rollout(args, env, policy, encoder.encoder)
 
     hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, episode_returns = traj
 
@@ -378,7 +380,7 @@ def get_test_rollout(args, env, policy, encoder=None):
     env.reset_task()
     state, task = utl.reset_env(env, args)
     state = state.to(device)
-    task = task.view(-1) if task is not None else None
+    task = task.view(1, -1) if task is not None else None
 
     for episode_idx in range(num_episodes):
 
@@ -387,19 +389,19 @@ def get_test_rollout(args, env, policy, encoder=None):
         if encoder is not None:
             if episode_idx == 0:
                 # reset to prior
-                curr_hidden_state = encoder.encoder.prior(1)
+                curr_hidden_state = encoder.prior(1)
 
             episode_hidden_states[episode_idx].append(curr_hidden_state[0].clone())
         for step_idx in range(1, env._max_episode_steps + 1):
 
             episode_prev_obs[episode_idx].append(state.clone())
 
-            _, action = policy.act(state=state, latent=curr_hidden_state, task=task, deterministic=True)
-            action = action.reshape((1, *action.shape))
+            _, action = policy.act(state=state, latent=curr_hidden_state.squeeze(0), task=task, deterministic=True)
+            #action = action.reshape((1, *action.shape))
 
             # observe reward and next obs
             (state, task), (rew_raw, rew_normalised), done, infos = utl.env_step(env, action, args)
-            state = state.reshape((1, -1)).to(device)
+            #state = state.reshape((1, -1)).to(device)
             #task = task.view(-1) if task is not None else None
 
             if encoder is not None:

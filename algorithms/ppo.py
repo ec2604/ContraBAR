@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import kornia
 from models.policy import init
 from utils import helpers as utl
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -104,6 +105,23 @@ class PPO:
                     value_loss = 0.5 * torch.max(value_losses, value_losses_clipped).mean()
                 else:
                     value_loss = 0.5 * (return_batch - values).pow(2).mean()
+                if self.args.augment_for_policy:
+                    obs_list = list(torch.split(state_batch, dim=1, split_size_or_sections=[3, state_batch.shape[1]-3]))
+                    orig_shape = obs_list[0].shape
+                    rgb = obs_list[0] / 255
+                    rgb = kornia.augmentation.RandomRGBShift(p=1.)(rgb) * 255
+                    # rgb = kornia.augmentation.RandomPlasmaShadow(p=1., shade_intensity=(-0.2, 0))(rgb) * 255
+                    obs_list[0] = rgb
+                    aug_state_batch = torch.cat(obs_list, dim=1)
+
+                    _, new_actions = self.actor_critic.act(state=aug_state_batch, latent=hidden_batch, task=task_batch)
+                    values_aug, action_log_probs_aug, dist_entropy_aug  = \
+                        self.actor_critic.evaluate_actions(aug_state_batch, \
+                                                       hidden_batch, task_batch, new_actions)
+                    # Compute Augmented Loss
+                    action_loss_aug = - action_log_probs_aug.mean()
+                    value_loss_aug = .5 * (torch.detach(values) - values_aug).pow(2).mean()
+                    aug_loss = value_loss_aug + action_loss_aug
 
                 # zero out the gradients
                 self.optimiser.zero_grad()
@@ -111,7 +129,8 @@ class PPO:
 
                 # compute policy loss and backprop
                 loss = value_loss * self.value_loss_coef + action_loss - dist_entropy * self.entropy_coef
-
+                if self.args.augment_for_policy:
+                    loss = loss + 0.15* aug_loss
 
                 # compute gradients (will attach to all networks involved in this computation)
                 loss.backward()

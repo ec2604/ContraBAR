@@ -4,6 +4,7 @@ Based on https://github.com/ikostrikov/pytorch-a2c-ppo-acktr
 Used for on-policy rollout storages.
 """
 import torch
+import kornia
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 
 from utils import helpers as utl

@@ -16,6 +16,8 @@ def get_args(rest_args):
 
     # what to pass to the policy (note this is after the encoder)
     parser.add_argument('--pass_state_to_policy', type=boolean_argument, default=True, help='condition policy on state')
+    parser.add_argument('--transform_state_to_latent',type=boolean_argument, default=False, help='transform state to encoded state')
+    parser.add_argument('--from_pixels', type=boolean_argument, default=False, help='Whether state input to policy is pixel-based')
     parser.add_argument('--pass_latent_to_policy', type=boolean_argument, default=True, help='condition policy on VAE latent')
     parser.add_argument('--pass_task_to_policy', type=boolean_argument, default=False, help='condition policy on ground-truth task description')
 
@@ -51,7 +53,7 @@ def get_args(rest_args):
     parser.add_argument('--ppo_clip_param', type=float, default=0.1, help='clamp param')
 
     # other hyperparameters
-    parser.add_argument('--lr_policy', type=float, default=7e-4, help='learning rate (default: 7e-4)')
+    parser.add_argument('--lr_policy', type=float, default=1e-4, help='learning rate (default: 7e-4)')
     parser.add_argument('--num_processes', type=int, default=16,
                         help='how many training CPU processes / parallel environments to use (default: 16)')
     parser.add_argument('--policy_num_steps', type=int, default=200,
@@ -76,9 +78,14 @@ def get_args(rest_args):
     parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples for CPC')
     parser.add_argument('--sampling_method', type=str, default='fast', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
     # general
+    parser.add_argument('--evaluate_start_iter', type=int, default=800, help='lookahead for CPC')
+    parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
+    parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
+
+
     parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
     parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
-    parser.add_argument('--lr_representation_learner', type=float, default=0.001)
+    parser.add_argument('--lr_representation_learner', type=float, default=1e-4)
     parser.add_argument('--num_trajs_representation_learning_buffer', type=int, default=10000,
                         help='how many trajectories (!) to keep in VAE buffer')
     parser.add_argument('--precollect_len', type=int, default=5000,
@@ -99,7 +106,9 @@ def get_args(rest_args):
                         help='Average reconstruction terms (instead of sum)')
     parser.add_argument('--num_representation_learner_updates', type=int, default=3,
                         help='how many VAE update steps to take per meta-iteration')
+    parser.add_argument('--underlying_state_dim', default=())
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
+    parser.add_argument('--lookahead_factor', type=int, default=10, help='lookahead for CPC')
     parser.add_argument('--kl_weight', type=float, default=0.1, help='weight for the KL term')
 
     parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,

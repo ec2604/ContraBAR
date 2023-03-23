@@ -202,23 +202,23 @@ class PointEnv(Env):
         episode_actions = [torch.stack(e) for e in episode_actions]
         episode_rewards = [torch.cat(e) for e in episode_rewards]
 
-        figsize = (5.5, 4)
+        figsize = (2.5 * 3, 2.5 * 3)
         figure, axis = plt.subplots(1, 1, figsize=figsize)
         xlim = (-1.3, 1.3)
-        if self.goal_sampler == semi_circle_goal_sampler:
-            ylim = (-0.3, 1.3)
-        else:
-            ylim = (-1.3, 1.3)
+        # if self.goal_sampler == semi_circle_goal_sampler:
+        #     ylim = (-0.3, 1.3)
+        # else:
+        ylim = (-1.3, 1.3)
         color_map = mpl.colors.ListedColormap(sns.color_palette("husl", num_episodes))
 
         observations = torch.stack([episode_prev_obs[i] for i in range(num_episodes)]).cpu().numpy()
         curr_task = env.get_task()[0]
 
         # plot goal
-        axis.scatter(curr_task[0], curr_task[1], marker='x', color='k', s=50)
+        axis.scatter(curr_task[1],curr_task[0], marker='x', color='k', s=50)
         # radius where we get reward
         if hasattr(self, 'goal_radius'):
-            circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
+            circle1 = plt.Circle(curr_task[::-1], self.goal_radius, color='c', alpha=0.2, edgecolor='none')
             plt.gca().add_artist(circle1)
 
         for i in range(num_episodes):
@@ -232,28 +232,33 @@ class PointEnv(Env):
             else:
                 angle = np.linspace(0, 2 * np.pi, 100)
             goal_range = r * np.array((np.cos(angle), np.sin(angle)))
-            plt.plot(goal_range[0], goal_range[1], 'k--', alpha=0.1)
+            # plt.plot(goal_range[0], goal_range[1], 'k--', alpha=0.1)
+            plt.plot(goal_range[1],goal_range[0], 'k--', alpha=0.1)
 
             # plot trajectory
-            axis.plot(path[:, 0], path[:, 1], '-', color=color, label=i)
-            axis.scatter(*path[0, :2], marker='.', color=color, s=50)
-            if i == 1 and kwargs['belief_evaluator'] is not None:
-                r = 1
-                num_points_semicircle = 50
-                angles = np.linspace(0, np.pi, num=num_points_semicircle)
-                x, y = r * np.cos(angles), r * np.sin(angles)
-                belief = 1. - torch.sigmoid(
-                    kwargs['belief_evaluator'](episode_hidden_states[i][0])).detach().cpu().numpy().flatten()
-                plt.scatter(x, y, c=belief, cmap='gray')
-        plt.xlim(xlim)
-        plt.ylim(ylim)
+            axis.plot(path[:, 1],path[:, 0], '-',marker='o', color=color, label=f'Episode {i}')
+            axis.scatter(path[0, 1],path[0, 0], marker='.', color=color, s=50)
+            # if i == 1 and kwargs['belief_evaluator'] is not None:
+            #     r = 1
+            #     num_points_semicircle = 50
+            #     angles = np.linspace(0, np.pi, num=num_points_semicircle)
+            #     x, y = r * np.cos(angles), r * np.sin(angles)
+            #     belief = 1. - torch.sigmoid(
+            #         kwargs['belief_evaluator'](episode_hidden_states[i][0])).detach().cpu().numpy().flatten()
+            #     plt.scatter(x, y, c=belief, cmap='gray')
+        plt.ylim(xlim)
+        plt.xlim(ylim)
         plt.xticks([])
         plt.yticks([])
+        # from matplotlib import transforms
+        # base = plt.gca().transData
+        # rot = transforms.Affine2D().rotate_deg(90)
+        plt.title('Sparse Pointrobot')
         plt.legend()
         plt.tight_layout()
-        kwargs['logger'].add_figure('belief', figure, iter_idx)
+        # kwargs['logger'].add_figure('belief', figure, iter_idx)
         if image_folder is not None:
-            plt.savefig('{}/{}_behaviour.png'.format(image_folder, iter_idx), dpi=300, bbox_inches='tight')
+            plt.savefig('{}/{}_behaviour'.format(image_folder, iter_idx))#, dpi=300, bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -263,11 +268,11 @@ class PointEnv(Env):
         plt.xlabel('env step')
         plt.ylabel('reward per step')
         plt.tight_layout()
-        if image_folder is not None:
-            plt.savefig('{}/{}_rewards.png'.format(image_folder, iter_idx), dpi=300, bbox_inches='tight')
-            plt.close()
-        else:
-            plt.show()
+        # if image_folder is not None:
+        #     plt.savefig('{}/{}_rewards.png'.format(image_folder, iter_idx), dpi=300, bbox_inches='tight')
+        #     plt.close()
+        # else:
+        #     plt.show()
 
         if not return_pos:
             return episode_hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \

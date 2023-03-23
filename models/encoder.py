@@ -224,8 +224,8 @@ class RNNCPCEncoder(nn.Module):
             curr_input_dim = layers_before_gru[i]
         self.ln = torch.nn.LayerNorm(curr_input_dim)
         # self.ln = nn.LayerNorm(curr_input_dim)
-        # if self.args.with_action_gru:
-        #     self.ln_without_action = nn.LayerNorm(curr_input_dim - action_embed_dim)
+        if self.args.with_action_gru:
+            self.ln_without_action = nn.LayerNorm(curr_input_dim - action_embed_dim)
         # recurrent unit
         # TODO: TEST RNN vs GRU vs LSTM
         self.gru = nn.GRU(input_size=curr_input_dim,

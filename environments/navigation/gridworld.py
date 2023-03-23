@@ -225,10 +225,6 @@ class GridNavi(gym.Env):
         episode_lengths = []
 
         episode_goals = []
-        if args.pass_belief_to_policy and (encoder is None):
-            episode_beliefs = [[] for _ in range(num_episodes)]
-        else:
-            episode_beliefs = None
 
         if encoder is not None:
             # keep track of latent spaces
@@ -243,7 +239,7 @@ class GridNavi(gym.Env):
         env.reset_task()
         [state, task] = utl.reset_env(env, args)
         start_obs = state.clone()
-
+        state = state.float().reshape((1, -1)).to(device)
         for episode_idx in range(args.max_rollouts_per_task):
 
             curr_goal = env.get_task()
@@ -259,8 +255,6 @@ class GridNavi(gym.Env):
                 episode_hidden_states[episode_idx].append(current_hidden_state[0].clone())
 
             episode_all_obs[episode_idx].append(start_obs.clone())
-            if args.pass_belief_to_policy and (encoder is None):
-                episode_beliefs[episode_idx].append(belief)
 
             for step_idx in range(1, env._max_episode_steps + 1):
 
@@ -277,6 +271,7 @@ class GridNavi(gym.Env):
 
                 # observe reward and next obs
                 [state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(env, action, args)
+                state = state.float().reshape((1, -1)).to(device)
 
                 if encoder is not None:
                     # update task embedding
@@ -296,8 +291,6 @@ class GridNavi(gym.Env):
                 curr_rollout_rew.append(rew_raw.clone())
                 curr_rollout_goal.append(env.get_task().copy())
 
-                if args.pass_belief_to_policy and (encoder is None):
-                    episode_beliefs[episode_idx].append(belief)
 
                 if infos[0]['done_mdp'] and not done:
                     start_obs = infos[0]['start_state']
@@ -319,9 +312,9 @@ class GridNavi(gym.Env):
         episode_rewards = [torch.cat(e) for e in episode_rewards]
 
         # plot behaviour & visualise belief in env
-
+        episode_beliefs = None
         rew_pred_means, rew_pred_vars = plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states,
-                                                image_folder, iter_idx, episode_beliefs)
+                                                image_folder, iter_idx, episode_beliefs)#, logger=kwargs['logger'])
 
         return episode_hidden_states,episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
                episode_returns
@@ -378,12 +371,15 @@ def plot_rew_reconstruction(env,
         plt.show()
 
 
-def plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states, image_folder, iter_idx, episode_beliefs):
+def plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states, image_folder, iter_idx, episode_beliefs,
+            **kwargs):
     """
     Plot behaviour and belief.
     """
 
-    plt.figure(figsize=(1.5 * env._max_episode_steps, 1.5 * args.max_rollouts_per_task))
+    # fig = plt.figure(figsize=(1.5 * env._max_episode_steps, 1.5 * args.max_rollouts_per_task))
+    fig = plt.figure(figsize=(2.5 * 4, 2.5 * 3))
+
 
     num_episodes = len(episode_all_obs)
     num_steps = len(episode_all_obs[0])
@@ -392,8 +388,11 @@ def plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states, im
     rew_pred_vars = [[] for _ in range(num_episodes)]
 
     # loop through the experiences
+    # for episode_idx in range(num_episodes):
     for episode_idx in range(num_episodes):
-        for step_idx in range(num_steps):
+        print(episode_idx)
+        # for step_idx in range(num_steps):
+        for i, step_idx in enumerate([0, 4, 7, 15]):
 
             curr_obs = episode_all_obs[episode_idx][:step_idx + 1]
             curr_goal = episode_goals[episode_idx]
@@ -403,12 +402,15 @@ def plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states, im
 
 
             # choose correct subplot
-            plt.subplot(args.max_rollouts_per_task,
-                        math.ceil(env._max_episode_steps) + 1,
-                        1 + episode_idx * (1 + math.ceil(env._max_episode_steps)) + step_idx),
+            # plt.subplot(args.max_rollouts_per_task,
+            #             math.ceil(env._max_episode_steps) + 1,
+            #             1 + episode_idx * (1 + math.ceil(env._max_episode_steps)) + step_idx),
+            plt.subplot(3,
+                        4,
+                        1 + episode_idx * (4) + i)
 
             # plot the behaviour
-            plot_behaviour(env, curr_obs, curr_goal)
+            plot_behaviour(env, curr_obs, curr_goal[0])
 
             if episode_beliefs is not None:
                 curr_beliefs = episode_beliefs[episode_idx][step_idx]
@@ -424,11 +426,13 @@ def plot_bb(env, args, episode_all_obs, episode_goals, episode_hidden_states, im
 
     # save figure that shows policy behaviour
     plt.tight_layout()
+    # if kwargs.get('logger', False):
+    #     kwargs['logger'].add_figure('behaviour', fig, iter_idx)
     if image_folder is not None:
         plt.savefig('{}/{}_behaviour'.format(image_folder, iter_idx))
         plt.close()
-    else:
-        plt.show()
+    # else:
+    #     plt.show()
 
     return rew_pred_means, rew_pred_vars
 

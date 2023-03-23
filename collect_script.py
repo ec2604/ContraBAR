@@ -1,8 +1,9 @@
 import argparse
 from config.dm_control import args_reacher_varibad, args_sparse_reacher_varibad
+from config.pointrobot import args_pointrobot_varibad
 from config.pointrobot import args_pointrobot_image_varibad
 from config.mujoco import args_sparse_ant_goal_varibad
-from config.panda_gym import args_sparse_panda_reacher_varibad
+from config.panda_gym import args_sparse_panda_reacher_varibad, args_sparse_panda_reacher_wind_varibad
 from environments.parallel_envs import make_vec_envs,make_env
 from tqdm import tqdm
 import utils.helpers as utl
@@ -14,12 +15,15 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     args, rest_args = parser.parse_known_args()
-    args = args_sparse_panda_reacher_varibad.get_args(rest_args)
+    # args = args_sparse_panda_reacher_varibad.get_args(rest_args)
+    # args = args_sparse_panda_reacher_wind_varibad.get_args(rest_args)
+    args = args_pointrobot_varibad.get_args(rest_args)
     # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_90__16:09_21:25:28/'
-    model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_16__23:09_20:19:52/'
+    # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_16__23:09_20:19:52/'
+    # model_location = '/mnt/data/erac/logs_CustomReachWind-v0/contrabar_88__16:11_11:03:02/'
     with open(model_location + 'models/env_rew_rms.pkl', 'rb') as f:
         a = pickle.load(f)
-    env = make_vec_envs(env_name='CustomReach-v0',
+    env = make_vec_envs(env_name='CustomReachWind-v0',
                         seed=12 * 42 +10000,
                         num_processes=16,
                         gamma=0.99,
@@ -35,7 +39,7 @@ if __name__ == '__main__':
     num_trajs = 1000
     traj_len = 150
     hidden_size = 50
-    task_size = 3
+    task_size = 6
     obs_shape = (5, 84, 84)
     pos_size = 3
     hidden_buffer = torch.zeros(num_trajs, traj_len, hidden_size)
@@ -58,6 +62,6 @@ if __name__ == '__main__':
         task_buffer[(i*16):(i+1)*16, ...] = task.detach().cpu()
         prev_pos_buffer[(i*16):(i+1)*16, ...] = episode_pos.copy()
         prev_obs_buffer[(i*16):(i+1)*16, ...] = episode_prev_obs.detach().cpu()
-    np.savez("/mnt/data/erac/logs_CustomReach-v0/panda_belief_ds_seed_seed_16.npz",
+    np.savez("/mnt/data/erac/logs_CustomReachWind-v0/panda_wind_belief_ds_seed_88.npz",
              hidden_buffer=hidden_buffer.numpy(), task_buffer=task_buffer.numpy(),
              prev_pos_buffer=prev_pos_buffer, prev_obs_buffer=prev_obs_buffer.numpy())

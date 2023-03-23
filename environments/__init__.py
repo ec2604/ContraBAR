@@ -43,11 +43,76 @@ register(
     max_episode_steps=100
 )
 register(
+    'PegInsertion-v0',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.peg_insertion:PegSimEnv',
+            'max_episode_steps': 80},
+    max_episode_steps=80
+)
+register(
+    'PegInsertion-v1',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.peg_insertion:PegSimEnvAngle',
+            'max_episode_steps': 80, 'distance_threshold': 0.05},
+    max_episode_steps=80
+)
+register(
+    'PegInsertion-v2',
+    entry_point='environments.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'environments.mujoco.peg_insertion:PegSimEnvProprio',
+            'max_episode_steps': 80, 'distance_threshold': 0.05},
+    max_episode_steps=80
+)
+register(
     'CustomReach-v0',
     entry_point='environments.panda_gym.custom_reach:CustomReachEnv',
     kwargs={'render': False},
     max_episode_steps=50
 )
+register(
+    'CustomReach-v1',
+    entry_point='environments.panda_gym.custom_reach:CustomReachEnv',
+    kwargs={'render': False, 'table_color': [45/255,85/255,255/255,1],
+            'plane_color': [1., 1., 159/255, 1]},
+    max_episode_steps=50
+)
+
+register(
+    'CustomReach-v2',
+    entry_point='environments.panda_gym.custom_reach:CustomReachEnv',
+    kwargs={'render': False, 'table_color': [30/255,80/255,200/255,1],
+            'plane_color': [1., 180/255., 70/255, 1]},
+    max_episode_steps=50
+)
+register(
+    'CustomReach-v3',
+    entry_point='environments.panda_gym.custom_reach:CustomReachEnv',
+    kwargs={'render': False, 'table_color': [80/255,80/255,100/255,1],
+            'plane_color': [1., 200/255., 50/255, 1]},
+    max_episode_steps=50
+)
+register(
+    'CustomReach-v4',
+    entry_point='environments.panda_gym.custom_reach:CustomReachEnv',
+    kwargs={'render': False, 'table_color': [80/255,80/255,220/255,1],
+            'plane_color': [1., 200/255., 100/255, 1]},
+    max_episode_steps=50
+)
+register(
+    'CustomReachWind-v0',
+    entry_point='environments.panda_gym.custom_reach:CustomReachWindEnv',
+    kwargs={'render': False, 'table_color': [215/255,181/255,18/255,1],
+            'plane_color': [102/255., 1., 159/255, 1]},
+    max_episode_steps=50
+)
+register(
+    'CustomReachWind-v1',
+    entry_point='environments.panda_gym.custom_reach:CustomReachWindEnv',
+    kwargs={'render': False, 'table_color': [45/255,85/255,255/255,1],
+            'plane_color': [1., 1., 159/255, 1]},
+    max_episode_steps=50
+)
+
 register(
     'SparseAntGoalImage-v1',
     entry_point='environments.wrappers:mujoco_wrapper',
@@ -90,8 +155,8 @@ register(
     'HalfCheetahVel-v0',
     entry_point='environments.wrappers:mujoco_wrapper',
     kwargs={'entry_point': 'environments.mujoco.half_cheetah_vel:HalfCheetahVelEnv',
-            'max_episode_steps': 50},
-    max_episode_steps=50
+            'max_episode_steps': 200},
+    max_episode_steps=200
 )
 register(
     'HalfCheetahVelWind-v0',
@@ -164,10 +229,10 @@ register(
 register(
     'PointEnvWind-v0',
     entry_point='environments.navigation.point_robot_wind:PointEnvWind',
-    kwargs={'max_episode_steps': 100,
-            'goal_sampler': 'semi-circle'
+    kwargs={'max_episode_steps': 50,
+            'goal_sampler': 'constant'
             },
-    max_episode_steps=100,
+    max_episode_steps=50,
 )
 register(
     'SparsePointEnv-v0',

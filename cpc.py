@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 import torch.nn as nn
-
+import kornia
 from models.encoder import RNNCPCEncoder
 from models.cpc_modules import MLP, actionGRU, statePredictor, CPCMatrix
 from utils.helpers import get_task_dim, get_num_tasks, get_pos_grid, InfoNCE, generate_predictor_input
@@ -54,7 +54,7 @@ class contrabarCPC:
         elif self.args.density_model == 'NN':
             if self.args.with_action_gru:
                 cpc_clf = [MLP(
-                    z_dim + 2 * self.args.latent_dim)
+                    z_dim + self.args.latent_dim)
                     for _ in range(1)]
             else:
                 cpc_clf = [MLP(
@@ -214,10 +214,18 @@ class contrabarCPC:
                 = batch
             trajectory_lens = np.array(trajectory_lens)
             num_sampled = np.array([0])
-
+        if self.args.augment_z:
+            obs_list = list(torch.split(next_obs,dim=2,split_size_or_sections=[3,next_obs.shape[2]-3]))
+            orig_shape = obs_list[0].shape
+            rgb = obs_list[0].view(-1, *orig_shape[2:]) / 255
+            rgb = kornia.augmentation.RandomRGBShift(p=1.)(rgb) * 255
+            # rgb = kornia.augmentation.RandomPlasmaShadow(p=1., shade_intensity=(-0.2, 0))(rgb) * 255
+            # rgb = kornia.augmentation.RandomPlasmaShadow(p=1., shade_intensity=(-0.2, 0))(rgb) * 255
+            obs_list[0] = rgb.view(orig_shape)
+            next_obs_new = torch.cat(obs_list,dim=2)
         # pass through encoder (outputs will be: (max_traj_len+1) x number of rollouts x latent_dim -- includes the prior!)
 
-        z_batch = self.encoder.embed_input(actions=actions, states=next_obs, rewards=rewards,
+        z_batch = self.encoder.embed_input(actions=actions, states=next_obs_new if self.args.augment_z else next_obs, rewards=rewards,
                                            with_actions=False if self.args.with_action_gru else True)
 
         seen_reward = ((rewards > 0).cumsum(dim=0) > 0).long().permute([1, 2, 0])[..., :-1]
@@ -255,20 +263,23 @@ class contrabarCPC:
                 self.lookahead_factor, -1, self.args.action_embedding_size)
 
             hidden_for_action_gru = hidden_states[:-self.lookahead_factor, :, :].reshape(-1, hidden_states.shape[-1])
+            print(a_for_gru.shape, hidden_for_action_gru.shape)
             a_latent, _ = self.action_gru(a_for_gru, hidden_for_action_gru.unsqueeze(0))
             a_latent = a_latent.view(self.lookahead_factor, trajectory_lens.max() - self.lookahead_factor,
                                      hidden_states.shape[1], -1)
             z_a_gru_pos = [
-                torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...],
-                           hidden_states[1:-self.lookahead_factor, ...]], dim=-1).permute([1, 0, -1])
+                torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]#,
+                           # hidden_states[1:-self.lookahead_factor, ...]
+                           ], dim=-1).permute([1, 0, -1])
                 for i in range(self.lookahead_factor)]
 
             z_a_gru_neg = [torch.cat([z_negatives[1:-self.lookahead_factor, ...],
                                       torch.unsqueeze(a_latent[i, :-1, ...], 2).expand(-1, -1,
                                                                                        self.args.negative_factor, -1),
-                                      hidden_states[:-self.lookahead_factor, ...][:-1, ...].unsqueeze(-2).expand(-1, -1,
-                                                                                                                 self.args.negative_factor,
-                                                                                                                 -1)],
+                                      # hidden_states[:-self.lookahead_factor, ...][:-1, ...].unsqueeze(-2).expand(-1, -1,
+                                      #                                                                            self.args.negative_factor,
+                                      #                                                                            -1)
+                                      ],
                                      dim=-1).permute([1, 0, 2, 3]) for i in range(self.lookahead_factor)]
             # z_a_gru_pos = [
             #     torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]], dim=-1).permute([1, 0, -1])
@@ -291,7 +302,7 @@ class contrabarCPC:
         if self.args.density_model == 'NN':
             if self.args.with_action_gru:
                 preds = [
-                    torch.cat([self.mlp[i](z_a_gru_pos[i]), self.mlp[i](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(-1,
+                    torch.cat([self.mlp[0](z_a_gru_pos[i]), self.mlp[0](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(-1,
                                                                                                                    1 + self.args.negative_factor)
                     for i in range(self.lookahead_factor)]
             else:
@@ -347,8 +358,8 @@ class contrabarCPC:
             # clip gradients
             if self.args.encoder_max_grad_norm is not None:
                 nn.utils.clip_grad_norm_(self.encoder.parameters(), self.args.encoder_max_grad_norm)
-                # if self.args.with_action_gru:
-                #     nn.utils.clip_grad_norm_(self.action_gru.parameters(), self.args.encoder_max_grad_norm)
+                if self.args.with_action_gru:
+                    nn.utils.clip_grad_norm_(self.action_gru.parameters(), self.args.encoder_max_grad_norm)
             # update
             self.cpc_optimizer.step()
             self.scheduler.step()

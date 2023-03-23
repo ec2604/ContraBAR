@@ -235,7 +235,7 @@ def boolean_argument(value):
 
 
 def get_task_dim(args):
-    env = make_vec_envs(env_name=args.env_name, seed=args.seed, num_processes=args.num_processes,
+    env = make_vec_envs(env_name=args.env_name, seed=args.seed, num_processes=1,
                         gamma=args.policy_gamma, device=device,
                         episodes_per_task=args.max_rollouts_per_task,
                         normalise_rew=args.norm_rew_for_policy, ret_rms=None,
@@ -382,6 +382,40 @@ def info_nce(prediction_matrix):
 def generate_predictor_input(hidden_states, tasks, reward_radius=0.05, train=False):
     l = 50
     z_ = 0.15 / 2
+    n = 10
+    if train:
+        r = 0.15
+        theta = np.linspace(-np.pi, np.pi, l)
+        x_ = np.cos(theta) * r
+        y_ = np.sin(theta) * r
+        all_states = (torch.normal(0, 0.05 / 3, (n, 1, 3)).numpy() + tasks.unsqueeze(0).cpu().numpy()).reshape(-1, 3)
+        r = 0.3
+        x_ = y_ = np.linspace(-r, r, l)
+        x, y, z = np.meshgrid(x_, y_, z_)
+        square_states = np.dstack((x, y, z)).reshape(-1, 3)
+        idx = np.arange(len(square_states))
+        np.random.shuffle(idx)
+        all_states = np.vstack([all_states, square_states[idx[:(n * l) // 5]]])
+
+    else:
+        r = 0.3
+        x_ = y_ = np.linspace(-r, r, l)
+        x, y, z = np.meshgrid(x_, y_, z_)
+        all_states = np.dstack((x, y, z)).reshape(-1, 3)
+
+    repeated_tasks = tasks.unsqueeze(1).repeat(1, all_states.shape[0], 1).detach().cpu().numpy()
+    repeated_states = np.tile(np.expand_dims(all_states, 0), [tasks.shape[0], 1, 1])
+    labels = torch.tensor(np.linalg.norm(repeated_tasks - repeated_states, axis=-1) <= reward_radius).to(torch.float)
+    repeated_labels = labels.unsqueeze(0).repeat(hidden_states.shape[0], 1, 1).unsqueeze(-1).to(device)
+    repeated_hidden = torch.tensor(hidden_states.unsqueeze(-2).repeat(1, 1, all_states.shape[0], 1)).cpu()
+    repeated_states_for_hidden = torch.tensor(
+        np.tile(np.expand_dims(repeated_states, 0), [hidden_states.shape[0], 1, 1, 1])).to(torch.float)
+    predictor_input = torch.concat([repeated_hidden, repeated_states_for_hidden], dim=-1).to(device)
+    return predictor_input, repeated_labels, (x_, y_, z_)
+
+def generate_predictor_wind_input(hidden_states, tasks, reward_radius=0.05, train=False):
+    l = 50
+    z_ = 0#0.15 / 2
     n = 10
     if train:
         r = 0.15
@@ -571,3 +605,64 @@ def collect_data(env, args, policy, encoder=None ):
 #
 #         return env
 #     return create_rlgpu_env
+
+# ±def get_linear_layer_memory_bytes(action_size, embedding_size):
+#     return 4*action_size * embedding_size
+#
+# def get_conv_layer_memory_bytes(d, hidden_sizes):
+#     total_params = 0
+#     from math import floor
+#     x = d
+#     dilation = 1
+#     padding = 0
+#     input_channels = 3
+#     images_size = (x // 2)**2 * hidden_sizes[0][0] + (x // 4)**2 *hidden_sizes[1][0]
+#     for hidden in hidden_sizes:
+#         out_channels, kernel, stride = hidden
+#         params_per_filter = input_channels * (kernel**2) + 1
+#         total_params += out_channels * params_per_filter
+#         x = floor(((x + 2 * padding - dilation * (kernel - 1) - 1) / stride) + 1)
+#         input_channels = out_channels
+#     return 4*images_size, 4*params_per_filter
+#
+# def get_memory_consumption_mb(d, trajectory_len):
+#     image_size, param_size = get_conv_layer_memory_bytes(d, [(32,3,2), (32,3,2), (32,3,1)])
+#     action_size = get_linear_layer_memory_bytes(2, 16)
+#     total_bytes = image_size*trajectory_len + 3*param_size + action_size
+#     return total_bytes // (1024**2)
+#
+#
+# import matplotlib as mpl
+# import matplotlib.pyplot as plt
+# import seaborn as sns
+# import numpy as np
+# from scipy import stats
+# import seaborn as sns
+# sns.color_palette("dark")
+# import matplotlib.pyplot as plt
+# def set_default_plot_params():
+#
+#     plt.rcParams['font.size'] = 40
+#     mpl.rcParams['ytick.labelsize'] = 15  # 21
+#     mpl.rcParams['xtick.labelsize'] = 15  # 21
+#     plt.rcParams["font.family"] = "Verdana"
+#     plt.rcParams["font.sans-serif"] = "Verdana"
+#     plt.rcParams['axes.labelsize'] = 17  # 21
+#     plt.rcParams['axes.titlesize'] = 17  # 25
+#     plt.rcParams['axes.linewidth'] = 0.6
+#     plt.rcParams['legend.fontsize'] = 14  # 22
+#     plt.rcParams["savefig.format"] = 'pdf'
+#     plt.rcParams['axes.edgecolor'] = 'grey'
+#     plt.rcParams['axes.edgecolor'] = 'grey'
+#     plt.rcParams['axes.linewidth'] = 1
+# set_default_plot_params()
+# memory_consumption = []
+# im_sizes = np.arange(64, 150, 20)
+# for im_size in im_sizes:
+#     memory_consumption.append(get_memory_consumption_mb(im_size, 200))
+# plt.plot(im_sizes, memory_consumption, marker='o')
+# plt.xlabel('Image dimension')
+# plt.ylabel('Memory consumption (MiB)')
+# plt.title('VariBAD Memory Consumption')
+# plt.grid()
+# plt.savefig('VariBAD_mem')

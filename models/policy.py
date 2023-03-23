@@ -99,7 +99,7 @@ class Policy(nn.Module):
         self.use_latent_encoder = self.args.policy_latent_embedding_dim is not None
         if self.pass_latent_to_policy and self.use_latent_encoder:
             self.latent_encoder = utl.FeatureExtractor(dim_latent, self.args.policy_latent_embedding_dim,
-                                                       self.activation_function)
+                                                       self.activation_function, mid=25)
             curr_input_dim = curr_input_dim - dim_latent + self.args.policy_latent_embedding_dim
         self.use_task_encoder = self.args.policy_task_embedding_dim is not None
         if self.pass_task_to_policy and self.use_task_encoder:
@@ -301,10 +301,6 @@ class DiagGaussian(nn.Module):
         init_ = lambda m: init(m,
                                init_normc_,
                                lambda x: nn.init.constant_(x, 0))
-        # init_ = lambda m: init(m,
-        #                        nn.init.orthogonal_,
-        #                        lambda x: nn.init.constant_(x, 0),
-        #                        gain=0.01)
         self.linear = init_(nn.Linear(num_inputs, num_outputs))
 
         self.fc_mean = init_(nn.Linear(num_inputs, num_outputs))

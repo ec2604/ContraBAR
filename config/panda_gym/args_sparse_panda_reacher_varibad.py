@@ -8,10 +8,10 @@ def get_args(rest_args):
     # --- GENERAL ---
 
     # training parameters
-    parser.add_argument('--num_frames', type=int, default=4e7, help='number of frames to train')
+    parser.add_argument('--num_frames', type=int, default=2e7, help='number of frames to train')
     parser.add_argument('--max_rollouts_per_task', type=int, default=3)
     parser.add_argument('--exp_label', default='contrabar', help='label (typically name of method)')
-    parser.add_argument('--env_name', default='CustomReach-v0', help='environment to train on')
+    parser.add_argument('--env_name', default='CustomReach-v1', help='environment to train on')
 
     # --- POLICY ---
 
@@ -20,7 +20,7 @@ def get_args(rest_args):
     parser.add_argument('--transform_state_to_latent',type=boolean_argument, default=False, help='transform state to encoded state')
     parser.add_argument('--from_pixels', type=boolean_argument, default=True, help='Whether state input to policy is pixel-based')
     parser.add_argument('--pass_latent_to_policy', type=boolean_argument, default=True, help='condition policy on VAE latent')
-    parser.add_argument('--pass_task_to_policy', type=boolean_argument, default=True, help='condition policy on ground-truth task description')
+    parser.add_argument('--pass_task_to_policy', type=boolean_argument, default=False, help='condition policy on ground-truth task description')
 
     # using separate encoders for the different inputs ("None" uses no encoder)
     parser.add_argument('--policy_state_embedding_dim', type=int, default=64)
@@ -62,7 +62,7 @@ def get_args(rest_args):
     parser.add_argument('--policy_eps', type=float, default=1e-8, help='optimizer epsilon (1e-8 for ppo, 1e-5 for a2c)')
     parser.add_argument('--policy_init_std', type=float, default=1., help='only used for continuous actions')
     parser.add_argument('--policy_value_loss_coef', type=float, default=0.5, help='value loss coefficient')
-    parser.add_argument('--policy_entropy_coef', type=float, default=0.005, help='entropy term coefficient')
+    parser.add_argument('--policy_entropy_coef', type=float, default=0.02, help='entropy term coefficient')
     parser.add_argument('--policy_gamma', type=float, default=0.99, help='discount factor for rewards')
     parser.add_argument('--policy_use_gae', type=boolean_argument, default=True,
                         help='use generalized advantage estimation')
@@ -81,6 +81,9 @@ def get_args(rest_args):
     parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
     parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
     parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
+    parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
+    parser.add_argument('--augment_for_policy', type=bool, default=False, help='weight trajectory steps?')
+
     # general
     parser.add_argument('--lr_representation_learner', type=float, default=3e-4)
     parser.add_argument('--subsample_cpc', type=float, default=1.)

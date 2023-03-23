@@ -26,10 +26,17 @@ def circle_goal_sampler():
     goal = r * np.array((np.cos(angle), np.sin(angle)))
     return goal
 
+def constant_goal():
+    r = 1.0
+    angle = np.pi / 2
+    goal = r * np.array((np.cos(angle), np.sin(angle)))
+    return goal
+
 
 GOAL_SAMPLERS = {
     'semi-circle': semi_circle_goal_sampler,
     'circle': circle_goal_sampler,
+    'constant': constant_goal
 }
 
 class PointEnv(Env):
@@ -300,30 +307,32 @@ class PointEnvWind(Env):
         elif isinstance(goal_sampler, str):
             self.goal_sampler = GOAL_SAMPLERS[goal_sampler]
         elif goal_sampler is None:
-            self.goal_sampler = semi_circle_goal_sampler
+            self.goal_sampler = GOAL_SAMPLERS['constant']
         else:
             raise NotImplementedError(goal_sampler)
 
+        self.p_1 = 0.5
         self.reset_task()
         self.task_dim = 2
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(2,))
         # we convert the actions from [-1, 1] to [-0.1, 0.1] in the step() function
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,))
         self._max_episode_steps = max_episode_steps
+        self._goal = self.goal_sampler()
+        self.sample_task()
 
-        self.noise_level = 1
-        self.noise_anneal_rate = 0.9
-        self.bonanza_radius = 0.01
+
+
 
     def sample_task(self):
-        goal = self.goal_sampler()
-        return goal
+        self.mode_1 = random.uniform(0, 0.3)
+        return np.array((self.mode_1, 0))
 
     def set_task(self, task):
-        self._goal = task
+        self._wind = task
 
     def get_task(self):
-        return self._goal
+        return self._wind
 
     def reset_task(self, task=None):
         if task is None:
@@ -336,7 +345,6 @@ class PointEnvWind(Env):
         return self._get_obs()
 
     def reset(self):
-        self.noise_level = 1
         return self.reset_model()
 
     def _get_obs(self):
@@ -346,12 +354,10 @@ class PointEnvWind(Env):
 
         action = np.clip(action, self.action_space.low, self.action_space.high)
         assert self.action_space.contains(action), action
-
-        self._state = self._state + 0.1 * action
-        reward = - np.linalg.norm(self._state - self._goal, ord=2) - np.random.uniform(0, self.noise_level)
-        self.noise_level *= self.noise_anneal_rate
-        if np.linalg.norm(self._state - self._goal, ord=2) < self.bonanza_radius:
-            reward = 200
+        curr_mode = self._wind[0] if random.uniform(0,1) < self.p_1 else -1*self._wind[0]
+        wind_x = random.normalvariate(curr_mode, 0.05 / 3)
+        self._state = self._state + 0.1 * (action) + (1+np.linalg.norm(action))*np.array([wind_x, 0])
+        reward = - np.linalg.norm(self._state - self._goal, ord=2)
         done = False
         ob = self._get_obs()
         info = {'task': self.get_task()}
@@ -471,13 +477,16 @@ class PointEnvWind(Env):
         color_map = mpl.colors.ListedColormap(sns.color_palette("husl", num_episodes))
 
         observations = torch.stack([episode_prev_obs[i] for i in range(num_episodes)]).cpu().numpy()
-        curr_task = env.get_task()[0]
-
+        #curr_task = env.get_task()[0]
+        r = 1
+        theta = np.pi/ 2
+        x = np.cos(theta)
+        y = np.sin(theta)
         # plot goal
-        axis.scatter(curr_task[0], curr_task[1], marker='x', color='k', s=50)
+        axis.scatter(x, y, marker='x', color='k', s=50)
         # radius where we get reward
         if hasattr(self, 'goal_radius'):
-            circle1 = plt.Circle(curr_task, self.goal_radius, color='c', alpha=0.2, edgecolor='none')
+            circle1 = plt.Circle(np.array([x,y]), self.goal_radius, color='c', alpha=0.2, edgecolor='none')
             plt.gca().add_artist(circle1)
 
         for i in range(num_episodes):
@@ -501,13 +510,11 @@ class PointEnvWind(Env):
         plt.ylim(ylim)
         plt.xticks([])
         plt.yticks([])
-        plt.scatter(kwargs['reward_decoder'](episode_hidden_states[0].view(-1, 50)).detach().cpu().numpy()[:, 0],
-                    kwargs['reward_decoder'](episode_hidden_states[0].view(-1, 50)).detach().cpu().numpy()[:, 1],
-                    c=np.arange(1, 102) / 101, cmap='viridis')
-        cbar = plt.colorbar()
-        cbar.set_ticks(np.arange(1,102)[::30] / 101)
-        cbar.set_ticklabels(np.arange(1, 102)[::30])
+        # plt.scatter(kwargs['reward_decoder'](episode_hidden_states[0].view(-1, 50)).detach().cpu().numpy()[:, 0],
+        #             kwargs['reward_decoder'](episode_hidden_states[0].view(-1, 50)).detach().cpu().numpy()[:, 1],
+        #             c=np.arange(1, 102) / 101, cmap='viridis')
         plt.legend()
+        plt.title(f'Wind: {env.get_task()[0]}')
         plt.tight_layout()
         kwargs['logger'].add_figure('belief', figure, iter_idx)
 
