@@ -6,9 +6,10 @@ import torch
 from torch.nn import functional as F
 import torch.nn as nn
 import kornia
+from utils import helpers as utl
 from models.encoder import RNNCPCEncoder
 from models.cpc_modules import MLP, actionGRU, statePredictor, CPCMatrix
-from utils.helpers import get_task_dim, get_num_tasks, get_pos_grid, InfoNCE, generate_predictor_input
+from utils.helpers import get_task_dim, get_num_tasks, get_pos_grid, InfoNCE, generate_predictor_input, relabel_func
 from utils.storage_vae import RolloutStorage
 from collections import namedtuple
 import matplotlib.pyplot as plt
@@ -39,8 +40,12 @@ class contrabarCPC:
         # initialise the encoder
         self.encoder = self.initialise_encoder()
         if self.args.with_action_gru:
-            self.action_gru = actionGRU(input_dim=self.args.action_embedding_size, hidden_dim=self.args.latent_dim).to(
+            self.action_gru = actionGRU(input_dim=self.args.action_embedding_size + (self.args.latent_dim//2), hidden_dim=self.args.latent_dim).to(
                 device)
+            self.action_gru_encoder = utl.FeatureExtractor(self.args.action_dim, self.args.action_embedding_size,
+                                                           F.elu).to(device)
+            self.action_gru_state_encoder = utl.FeatureExtractor(*self.args.state_dim, self.args.latent_dim, F.elu).to(device)
+
         self.lookahead_factor = self.args.lookahead_factor if self.args.lookahead_factor else 1
         z_dim = self.args.reward_embedding_size + self.args.state_embedding_size  # self.encoder.state_encoder.output_size#
         if not self.args.with_action_gru:
@@ -54,7 +59,7 @@ class contrabarCPC:
         elif self.args.density_model == 'NN':
             if self.args.with_action_gru:
                 cpc_clf = [MLP(
-                    z_dim + self.args.latent_dim)
+                    z_dim + int(1.5*self.args.latent_dim))
                     for _ in range(1)]
             else:
                 cpc_clf = [MLP(
@@ -83,6 +88,8 @@ class contrabarCPC:
         cpc_params = [*self.encoder.parameters()] + [*self.mlp.parameters()]
         if self.args.with_action_gru:
             cpc_params += [*self.action_gru.parameters()]
+            cpc_params += [*self.action_gru_encoder.parameters()]
+            cpc_params += [*self.action_gru_state_encoder.parameters()]
         self.cpc_optimizer = torch.optim.Adam(cpc_params,
                                               lr=self.args.lr_representation_learner)
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.cpc_optimizer, milestones=[1200], gamma=0.5)
@@ -176,6 +183,13 @@ class contrabarCPC:
         return obs_neg.reshape(z_batch.shape[0], z_batch.shape[1], negative_sampling_factor, z_batch.shape[-1]).permute(
             [1, 0, 2, 3]), cdist
 
+    def sample_negative_rewards(self, next_obs, pos, actions, rewards, negative_sampling_factor,
+                                relabel_func, tasks):
+        rewards_modified = relabel_func(pos, negative_sampling_factor, rewards,tasks)
+        z_negatives = [self.encoder.embed_input(actions, next_obs, rew_mod[..., -1], with_actions=False if self.args.with_action_gru else True) for rew_mod in  torch.split(rewards_modified, 1, dim=-2)]
+        z_negatives = torch.stack(z_negatives, dim=-2)
+        return z_negatives, None
+
     def relabel_visual_reward(self, z_batch, next_obs, rewards, actions, underlying_states):
         z_batch = z_batch.permute([1, 0, 2])
         dim_cdist = z_batch.reshape(-1, z_batch.shape[-1]).shape[0]
@@ -241,6 +255,9 @@ class contrabarCPC:
             negatives = self.sample_negatives_2(z_batch, self.args.negative_factor, trajectory_lens, tasks)
         elif self.args.sampling_method == 'precise':
             negatives = self.sample_negatives(z_batch, self.args.negative_factor, trajectory_lens, tasks)
+        elif self.args.sampling_method == 'negative_rewards':
+            negatives = self.sample_negative_rewards(next_obs, next_obs[...,:2], actions, rewards, self.args.negative_factor,
+            relabel_func, tasks)
         else:
             negatives = self.relabel_visual_reward(z_batch, next_obs, rewards, actions, underlying_states)
         if negatives == False:
@@ -253,7 +270,7 @@ class contrabarCPC:
         if self.args.with_action_gru:
             indices = torch.arange(0, self.lookahead_factor, device=device) + torch.arange(
                 trajectory_lens.max() - self.lookahead_factor, device=device).view(-1, 1)
-            encoded_actions = self.encoder.action_encoder(actions)
+            encoded_actions = self.action_gru_encoder(actions)
             a_for_gru = torch.gather(
                 encoded_actions[1:, :, :].unsqueeze(1).expand(-1, trajectory_lens.max() - self.lookahead_factor, -1,
                                                               -1),
@@ -262,23 +279,23 @@ class contrabarCPC:
                                                                                 self.args.action_embedding_size)).reshape(
                 self.lookahead_factor, -1, self.args.action_embedding_size)
 
-            hidden_for_action_gru = hidden_states[:-self.lookahead_factor, :, :].reshape(-1, hidden_states.shape[-1])
-            print(a_for_gru.shape, hidden_for_action_gru.shape)
-            a_latent, _ = self.action_gru(a_for_gru, hidden_for_action_gru.unsqueeze(0))
+            hidden_for_action_gru = hidden_states[:-self.lookahead_factor, :, :].reshape(-1, hidden_states.shape[-1]).unsqueeze(0)
+            hidden_for_action_gru = torch.tile(hidden_for_action_gru, (self.lookahead_factor, 1, 1))
+            action_hidden_concat = torch.concat([a_for_gru, hidden_for_action_gru[...,:self.args.latent_dim // 2]], dim=-1)
+            states_for_action_gru = self.action_gru_state_encoder(prev_obs)[:-self.lookahead_factor, :, :].reshape(-1, self.args.latent_dim)
+            #a_latent, _ = self.action_gru(a_for_gru, hidden_for_action_gru.unsqueeze(0))
+            a_latent, _ = self.action_gru(action_hidden_concat, states_for_action_gru.unsqueeze(0))
+            a_latent = torch.concat([a_latent, hidden_for_action_gru[...,self.args.latent_dim // 2:]], dim=-1)
             a_latent = a_latent.view(self.lookahead_factor, trajectory_lens.max() - self.lookahead_factor,
                                      hidden_states.shape[1], -1)
             z_a_gru_pos = [
                 torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]#,
-                           # hidden_states[1:-self.lookahead_factor, ...]
                            ], dim=-1).permute([1, 0, -1])
                 for i in range(self.lookahead_factor)]
 
             z_a_gru_neg = [torch.cat([z_negatives[1:-self.lookahead_factor, ...],
                                       torch.unsqueeze(a_latent[i, :-1, ...], 2).expand(-1, -1,
                                                                                        self.args.negative_factor, -1),
-                                      # hidden_states[:-self.lookahead_factor, ...][:-1, ...].unsqueeze(-2).expand(-1, -1,
-                                      #                                                                            self.args.negative_factor,
-                                      #                                                                            -1)
                                       ],
                                      dim=-1).permute([1, 0, 2, 3]) for i in range(self.lookahead_factor)]
             # z_a_gru_pos = [
