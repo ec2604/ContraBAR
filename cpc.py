@@ -1,18 +1,14 @@
-import warnings
 
-import gym
 import numpy as np
 import torch
-from torch.nn import functional as F
 import torch.nn as nn
 import kornia
 from models.encoder import RNNCPCEncoder
-from models.cpc_modules import MLP, actionGRU, statePredictor, CPCMatrix
-from utils.helpers import get_task_dim, get_num_tasks, get_pos_grid, InfoNCE, generate_predictor_input
+from models.cpc_modules import MLP, actionGRU, statePredictor
+from utils.helpers import get_task_dim, generate_predictor_input
 from utils.storage_vae import RolloutStorage
 from collections import namedtuple
-import matplotlib.pyplot as plt
-import torch.autograd.profiler as profiler
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 CPCStats = namedtuple('cpc_stats', ['cpc_loss', 'hidden_states', 'z_dist', 'fraction_examples_reward_seen',
@@ -47,20 +43,14 @@ class contrabarCPC:
             z_dim += self.args.action_embedding_size
         if len(self.args.encoder_layers_before_gru) > 0:
             z_dim = self.args.encoder_layers_before_gru[-1]
-        if self.args.density_model == 'bilinear':
-            cpc_clf = [CPCMatrix(self.args.latent_dim,
-                                 z_dim)
-                       for _ in range(self.lookahead_factor)]
-        elif self.args.density_model == 'NN':
-            if self.args.with_action_gru:
-                cpc_clf = [MLP(
-                    z_dim + self.args.latent_dim)
-                    for _ in range(1)]
-            else:
-                cpc_clf = [MLP(
-                    z_dim + self.args.latent_dim) for _ in range(self.lookahead_factor)]
+
+        if self.args.with_action_gru:
+            cpc_clf = [MLP(
+                z_dim + self.args.latent_dim)
+                for _ in range(1)]
         else:
-            raise NotImplementedError
+            cpc_clf = [MLP(
+                z_dim + self.args.latent_dim) for _ in range(self.lookahead_factor)]
         self.mlp = nn.ModuleList(cpc_clf).to(device)
         self.cpc_loss_func = torch.nn.CrossEntropyLoss()
         if self.args.evaluate_representation:
@@ -106,13 +96,7 @@ class contrabarCPC:
 
     def sample_negatives(self, z_batch, negative_sampling_factor, trajectory_len, tasks, metric='l2'):
         z_batch = z_batch.permute([1, 0, 2])
-        if metric == 'l2':
-            cdist = torch.cdist(z_batch.reshape(-1, z_batch.shape[-1]), z_batch.reshape(-1, z_batch.shape[-1]))
-        else:
-            z = z_batch.reshape(-1, z_batch.shape[-1])
-            a_norm = z / z.norm(dim=1)[:, None]
-            b_norm = z / z.norm(dim=1)[:, None]
-            cdist = torch.mm(a_norm, b_norm.transpose(0, 1)) + 1
+        cdist = torch.cdist(z_batch.reshape(-1, z_batch.shape[-1]), z_batch.reshape(-1, z_batch.shape[-1]))
         task_dist = torch.cdist(tasks, tasks)
         x, y = torch.where(task_dist == 0)
         x = ((x * (z_batch.shape[1])).reshape(-1, 1) + torch.arange(z_batch.shape[1]).reshape(1, -1).to(
@@ -125,15 +109,9 @@ class contrabarCPC:
         cdist[idx] = -2
         cdist = cdist.reshape(orig_shape)
 
-        by_angle = False
-        if by_angle:
-            numerator = cdist * (cdist > -2)
-            denom = (cdist * (cdist > -2)).sum(dim=-1).view(cdist.shape[0],
-                                                            1)
-        else:
-            numerator = (cdist > 0)
-            denom = (cdist > 0).sum(dim=-1).view(cdist.shape[0],
-                                                 1)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1)).sum(dim=-1).view(cdist.shape[0], 1)
+
+        numerator = (cdist > 0)
+        denom = (cdist > 0).sum(dim=-1).view(cdist.shape[0], 1)
         if torch.any(denom == 0):
             return False
         obs_neg = z_batch.reshape(-1, z_batch.shape[-1])[
@@ -146,26 +124,10 @@ class contrabarCPC:
         dim_cdist = z_batch.reshape(-1, z_batch.shape[-1]).shape[0]
         block = torch.ones((z_batch.shape[1], z_batch.shape[1]), dtype=torch.int8) * -1
         cdist = torch.block_diag(*[block for _ in range(dim_cdist // z_batch.shape[1])])
-        if self.args.cpc_trajectory_weight_sampling:
-            cdist = cdist + 1
-            matrices = []
-            first_k_steps = 16
-            episode_length = 100
-            weighting_vector = np.array([1] * z_batch.shape[1] + (
-                    [1] * episode_length + [3] * first_k_steps + (episode_length - first_k_steps) * [1]) * (
-                                                z_batch.shape[0] - 1))
-            for i in range(z_batch.shape[0]):
-                weighting_mat = np.repeat(np.expand_dims(weighting_vector.copy(), 0), z_batch.shape[1], 0)
-                matrices.append(weighting_mat)
-                weighting_vector = np.roll(weighting_vector, z_batch.shape[1])
-            matrices = torch.from_numpy(np.vstack(matrices))
-            cdist = cdist * matrices
+
         numerator = (cdist > -1)
         denom = (cdist > -1).sum(dim=-1).view(cdist.shape[0],
                                               1)
-        if self.args.cpc_trajectory_weight_sampling:
-            numerator = cdist
-            denom = cdist.sum(dim=-1)
         if torch.any(denom == 0):
             return False
         obs_neg = z_batch.reshape(-1, z_batch.shape[-1])[
@@ -242,9 +204,7 @@ class contrabarCPC:
             a_latent = a_latent.view(self.lookahead_factor, trajectory_lens.max() - self.lookahead_factor,
                                      hidden_states.shape[1], -1)
             z_a_gru_pos = [
-                torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]#,
-                           # hidden_states[1:-self.lookahead_factor, ...]
-                           ], dim=-1).permute([1, 0, -1])
+                torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]], dim=-1).permute([1, 0, -1])
                 for i in range(self.lookahead_factor)]
 
             z_a_gru_neg = [torch.cat([z_negatives[1:-self.lookahead_factor, ...],
@@ -262,25 +222,17 @@ class contrabarCPC:
                                                                                          -1)],
                                      dim=-1).permute(
                 [1, 0, 2, 3]) for i in range(1, self.lookahead_factor + 1)]
-        if self.args.density_model == 'NN':
-            if self.args.with_action_gru:
-                preds = [
-                    torch.cat([self.mlp[0](z_a_gru_pos[i]), self.mlp[0](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(-1,
-                                                                                                                   1 + self.args.negative_factor)
-                    for i in range(self.lookahead_factor)]
-            else:
-                preds = [
-                    torch.cat([self.mlp[i](z_a_gru_pos[i]), self.mlp[i](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(
-                        -1,
-                        1 + self.args.negative_factor)
-                    for i in range(self.lookahead_factor)]
-        elif self.args.density_model == 'bilinear':
-            preds = [torch.cat([self.mlp[i](z_a_gru_pos[i][..., -self.args.latent_dim:],
-                                            z_a_gru_pos[i][..., :-self.args.latent_dim]).squeeze(-1),
-                                self.mlp[i](z_a_gru_neg[i][..., -self.args.latent_dim:],
-                                            z_a_gru_neg[i][..., :-self.args.latent_dim]).squeeze(-1).squeeze(-1)],
-                               dim=-1).view(-1, 1 + self.args.negative_factor)
-                     for i in range(self.lookahead_factor)]
+        if self.args.with_action_gru:
+            preds = [
+                torch.cat([self.mlp[0](z_a_gru_pos[i]), self.mlp[0](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(-1,
+                                                                                                               1 + self.args.negative_factor)
+                for i in range(self.lookahead_factor)]
+        else:
+            preds = [
+                torch.cat([self.mlp[i](z_a_gru_pos[i]), self.mlp[i](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(
+                    -1,
+                    1 + self.args.negative_factor)
+                for i in range(self.lookahead_factor)]
         preds = torch.cat(preds, dim=0)
         # preds = preds[torch.randperm(len(preds))[:int(self.args.subsample_cpc * len(preds))]]
         targets = torch.zeros((preds.shape[0]), dtype=torch.long, device=device)
