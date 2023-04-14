@@ -347,16 +347,8 @@ class MetaLearner:
                         self.iter_idx)
         self.logger.add(f'cpc/{log_prefix}_fraction_trajectories_reward_seen',
                         stats.fraction_trajectories_reward_seen, self.iter_idx)
-        self.logger.add_hist(f'cpc/{log_prefix}_z_dist', stats.z_dist, self.iter_idx)
-        # belief_norm = torch.norm(stats.hidden_states, dim=-1).reshape(-1)
-        # self.logger.add_hist(f'cpc/{log_prefix}_belief_norm', belief_norm, self.iter_idx)
         self.logger.add(f'cpc/{log_prefix}_avg_num_sampled', stats.num_sampled, self.iter_idx)
-        # if self.visualize:
-        #     fig = plt.figure()
-        #     plt.plot(stats.cosine_similarity.numpy())
-        #     plt.grid()
-        #     self.logger.add_figure(f'cpc/{log_prefix}_belief_consec_cosine_sim', fig, self.iter_idx)
-        #     plt.close()
+
     def log(self, run_stats, train_policy_stats, train_cpc_stats, train_evaluation_loss, start_time):
 
         # --- visualise behaviour of policy ---

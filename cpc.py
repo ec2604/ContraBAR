@@ -11,8 +11,8 @@ from collections import namedtuple
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-CPCStats = namedtuple('cpc_stats', ['cpc_loss', 'hidden_states', 'z_dist', 'fraction_examples_reward_seen',
-                                    'fraction_trajectories_reward_seen', 'num_sampled', 'tasks', 'cosine_similarity'])
+CPCStats = namedtuple('cpc_stats', ['cpc_loss', 'hidden_states', 'fraction_examples_reward_seen',
+                                    'fraction_trajectories_reward_seen', 'num_sampled', 'tasks'])
 evaluationStats = namedtuple('evaluation_stats', ['loss', 'predictions'])
 
 
@@ -142,16 +142,20 @@ class contrabarCPC:
             return 0, 0, 0
 
         # get a mini-batch
+        # prev_obs will be of size: max trajectory len x num trajectories x dimension of observations
+
+        # Batch can be sampled from rollout storage or directly given (as in evaluation)
         if batch is None:
             prev_obs, next_obs, actions, rewards, tasks, underlying_states, \
             trajectory_lens, num_sampled = self.rollout_storage.get_batch(
                 batchsize=self.args.representation_learner_batch_num_trajs)
-            # vae_prev_obs will be of size: max trajectory len x num trajectories x dimension of observations
         else:
             prev_obs, next_obs, actions, rewards, tasks, underlying_states, trajectory_lens \
                 = batch
             trajectory_lens = np.array(trajectory_lens)
             num_sampled = np.array([0])
+
+        # If true augments the observations with random RGB shifts
         if self.args.augment_z:
             obs_list = list(torch.split(next_obs,dim=2,split_size_or_sections=[3,next_obs.shape[2]-3]))
             orig_shape = obs_list[0].shape
@@ -159,12 +163,15 @@ class contrabarCPC:
             rgb = kornia.augmentation.RandomRGBShift(p=1.)(rgb) * 255
             obs_list[0] = rgb.view(orig_shape)
             next_obs_new = torch.cat(obs_list,dim=2)
+
         # pass through encoder (outputs will be: (max_traj_len+1) x number of rollouts x latent_dim -- includes the prior!)
 
         z_batch = self.encoder.embed_input(actions=actions, states=next_obs_new if self.args.augment_z else next_obs, rewards=rewards,
                                            with_actions=False if self.args.with_action_gru else True)
-
+        # Relevant for sparse rewards, calculates how many rewards seen so far at each point
         seen_reward = ((rewards > 0).cumsum(dim=0) > 0).long().permute([1, 2, 0])[..., :-1]
+
+        # Encode each partial history
         hidden_states = self.encoder(actions=actions,
                                      states=next_obs,
                                      rewards=rewards,
@@ -183,13 +190,18 @@ class contrabarCPC:
             return None
         z_negatives, z_dist = negatives
 
+        # Initialize variables
         cpc_loss = None
         z_a_gru_pos = None
         z_a_gru_neg = None
+
         if self.args.with_action_gru:
+            # Precalculate action indices for lookahead
             indices = torch.arange(0, self.lookahead_factor, device=device) + torch.arange(
                 trajectory_lens.max() - self.lookahead_factor, device=device).view(-1, 1)
             encoded_actions = self.encoder.action_encoder(actions)
+
+            # Gather all encoded actions at relevant indices
             a_for_gru = torch.gather(
                 encoded_actions[1:, :, :].unsqueeze(1).expand(-1, trajectory_lens.max() - self.lookahead_factor, -1,
                                                               -1),
@@ -198,11 +210,16 @@ class contrabarCPC:
                                                                                 self.args.action_embedding_size)).reshape(
                 self.lookahead_factor, -1, self.args.action_embedding_size)
 
+            # Get hidden states for action_gru
             hidden_for_action_gru = hidden_states[:-self.lookahead_factor, :, :].reshape(-1, hidden_states.shape[-1])
-            print(a_for_gru.shape, hidden_for_action_gru.shape)
+
+            # Generate hidden states from action_gru
             a_latent, _ = self.action_gru(a_for_gru, hidden_for_action_gru.unsqueeze(0))
             a_latent = a_latent.view(self.lookahead_factor, trajectory_lens.max() - self.lookahead_factor,
                                      hidden_states.shape[1], -1)
+
+            # Create positive and negative observations by concatenating embedded transition tuples with action_gru
+            # hidden states
             z_a_gru_pos = [
                 torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]], dim=-1).permute([1, 0, -1])
                 for i in range(self.lookahead_factor)]
@@ -241,12 +258,10 @@ class contrabarCPC:
         fraction_examples_reward_seen = seen_reward.sum() / z_a_gru_pos[0].shape[1]
         fraction_trajectories_reward_seen = (seen_reward.sum(dim=[1, 2]) > 0).sum() / seen_reward.shape[0]
 
-        hidden_cosine_sim = torch.zeros((z_batch.shape[0] - 2,))
-
-        cpc_train_stats = CPCStats(cpc_loss, hidden_states.detach().clone(), z_dist,
+        cpc_train_stats = CPCStats(cpc_loss, hidden_states.detach().clone(),
                                    fraction_examples_reward_seen,
                                    fraction_trajectories_reward_seen, num_sampled,
-                                   tasks, hidden_cosine_sim)
+                                   tasks)
         return cpc_train_stats
 
     def update_cpc(self):
