@@ -125,16 +125,13 @@ class contrabarCPC:
         cdist[idx] = -2
         cdist = cdist.reshape(orig_shape)
 
-        # for i in range(z_batch.shape[0]):
-        #     for j in torch.where(task_dist[i,:] == 0.)[0]:
-        #         cdist[i*z_batch.shape[1]:(i+1)*z_batch.shape[1],j*z_batch.shape[1]:(j+1)*z_batch.shape[1]] = -1
         by_angle = False
         if by_angle:
             numerator = cdist * (cdist > -2)
             denom = (cdist * (cdist > -2)).sum(dim=-1).view(cdist.shape[0],
                                                             1)
         else:
-            numerator = (cdist > 0)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1))
+            numerator = (cdist > 0)
             denom = (cdist > 0).sum(dim=-1).view(cdist.shape[0],
                                                  1)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1)).sum(dim=-1).view(cdist.shape[0], 1)
         if torch.any(denom == 0):
@@ -163,9 +160,9 @@ class contrabarCPC:
                 weighting_vector = np.roll(weighting_vector, z_batch.shape[1])
             matrices = torch.from_numpy(np.vstack(matrices))
             cdist = cdist * matrices
-        numerator = (cdist > -1)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1))
+        numerator = (cdist > -1)
         denom = (cdist > -1).sum(dim=-1).view(cdist.shape[0],
-                                              1)  # (cdist > cdist.min(dim=-1).values.view(cdist.shape[0], 1)).sum(dim=-1).view(cdist.shape[0], 1)
+                                              1)
         if self.args.cpc_trajectory_weight_sampling:
             numerator = cdist
             denom = cdist.sum(dim=-1)
@@ -175,27 +172,6 @@ class contrabarCPC:
             torch.multinomial(numerator / denom, negative_sampling_factor, replacement=True)]
         return obs_neg.reshape(z_batch.shape[0], z_batch.shape[1], negative_sampling_factor, z_batch.shape[-1]).permute(
             [1, 0, 2, 3]), cdist
-
-    def relabel_visual_reward(self, z_batch, next_obs, rewards, actions, underlying_states):
-        z_batch = z_batch.permute([1, 0, 2])
-        dim_cdist = z_batch.reshape(-1, z_batch.shape[-1]).shape[0]
-        block = torch.ones((z_batch.shape[1], z_batch.shape[1]), dtype=torch.int8) * -1
-        cdist = torch.block_diag(*[block for _ in range(dim_cdist // z_batch.shape[1])])
-
-        top_strip = next_obs[0, 0, 0, :20].clone()
-        blank_strip = torch.zeros_like(top_strip).to(device)
-
-        next_obs_negatives = next_obs.clone()
-        r = (underlying_states[..., 0] ** 2 + underlying_states[..., 1] ** 2) ** 0.5
-        theta = torch.atan2(underlying_states[..., 1], (underlying_states[..., 0]))
-        mask = (theta > -np.pi) * (theta < 0) * (r > (0.2 - 0.05)) * (r < (0.2 + 0.05))
-        bit_mask = torch.randn(mask.shape, device=torch.device("cuda")) < 0.5
-        mask = mask * bit_mask
-        next_obs_negatives[:, :, 2, :20, :][(mask) * (rewards > 0).squeeze(-1), :20, :] = top_strip.unsqueeze(0)
-        next_obs_negatives[:, :, 2, :20, :][(mask) * (rewards < 1).squeeze(-1), :20, :] = blank_strip.unsqueeze(0)
-        z_negatives = self.encoder.embed_input(actions=actions, states=next_obs_negatives, rewards=rewards,
-                                               with_actions=False if self.args.with_action_gru else True).unsqueeze(-2)
-        return z_negatives, cdist
 
     def compute_cpc_loss(self, batch=None):
         """ Returns the CPC loss """
@@ -219,8 +195,6 @@ class contrabarCPC:
             orig_shape = obs_list[0].shape
             rgb = obs_list[0].view(-1, *orig_shape[2:]) / 255
             rgb = kornia.augmentation.RandomRGBShift(p=1.)(rgb) * 255
-            # rgb = kornia.augmentation.RandomPlasmaShadow(p=1., shade_intensity=(-0.2, 0))(rgb) * 255
-            # rgb = kornia.augmentation.RandomPlasmaShadow(p=1., shade_intensity=(-0.2, 0))(rgb) * 255
             obs_list[0] = rgb.view(orig_shape)
             next_obs_new = torch.cat(obs_list,dim=2)
         # pass through encoder (outputs will be: (max_traj_len+1) x number of rollouts x latent_dim -- includes the prior!)
@@ -242,7 +216,7 @@ class contrabarCPC:
         elif self.args.sampling_method == 'precise':
             negatives = self.sample_negatives(z_batch, self.args.negative_factor, trajectory_lens, tasks)
         else:
-            negatives = self.relabel_visual_reward(z_batch, next_obs, rewards, actions, underlying_states)
+            negatives = False
         if negatives == False:
             return None
         z_negatives, z_dist = negatives
@@ -276,19 +250,8 @@ class contrabarCPC:
             z_a_gru_neg = [torch.cat([z_negatives[1:-self.lookahead_factor, ...],
                                       torch.unsqueeze(a_latent[i, :-1, ...], 2).expand(-1, -1,
                                                                                        self.args.negative_factor, -1),
-                                      # hidden_states[:-self.lookahead_factor, ...][:-1, ...].unsqueeze(-2).expand(-1, -1,
-                                      #                                                                            self.args.negative_factor,
-                                      #                                                                            -1)
                                       ],
                                      dim=-1).permute([1, 0, 2, 3]) for i in range(self.lookahead_factor)]
-            # z_a_gru_pos = [
-            #     torch.cat([z_batch[1:-self.lookahead_factor, ...], a_latent[i, :-1, ...]], dim=-1).permute([1, 0, -1])
-            #     for i in range(self.lookahead_factor)]
-            # z_a_gru_neg = [torch.cat([z_negatives[1:-self.lookahead_factor, ...],
-            #                           torch.unsqueeze(a_latent[i, :-1, ...], 2).expand(-1, -1,
-            #                                                                            self.args.negative_factor, -1)],
-            #                          dim=-1).permute([1, 0, 2, 3]) for i in range(self.lookahead_factor)]
-
         else:
             z_a_gru_pos = [
                 torch.cat([z_batch[i:, ...], hidden_states[:-i, ...]], dim=-1).permute([1, 0, -1]) for i
@@ -306,14 +269,6 @@ class contrabarCPC:
                                                                                                                    1 + self.args.negative_factor)
                     for i in range(self.lookahead_factor)]
             else:
-                # z_a_gru_pos = torch.stack(
-                #     [z_a_gru_pos[i][:, :self.args.max_trajectory_len - self.lookahead_factor, :] for i in
-                #      range(self.lookahead_factor)], dim=-2).unsqueeze(-3)
-                # z_a_gru_neg = torch.stack(
-                #     [z_a_gru_neg[i][:, :self.args.max_trajectory_len - self.lookahead_factor, ...] for i in
-                #      range(self.lookahead_factor)], dim=-2)
-                # preds = self.mlp[0](torch.cat([z_a_gru_pos, z_a_gru_neg], dim=2))
-                # preds = torch.cat([preds[..., i, i] for i in range(self.lookahead_factor)], dim=-2).view(-1, 1 + self.args.negative_factor)
                 preds = [
                     torch.cat([self.mlp[i](z_a_gru_pos[i]), self.mlp[i](z_a_gru_neg[i]).squeeze(-1)], dim=-1).view(
                         -1,
@@ -333,13 +288,7 @@ class contrabarCPC:
 
         fraction_examples_reward_seen = seen_reward.sum() / z_a_gru_pos[0].shape[1]
         fraction_trajectories_reward_seen = (seen_reward.sum(dim=[1, 2]) > 0).sum() / seen_reward.shape[0]
-        traj_reward_seen = torch.where(seen_reward.sum(dim=[1, 2]) > 0)
-        # if len(traj_reward_seen[0]) > 0:
-        #     traj_idx = traj_reward_seen[0][0]
-        #
-        #     hidden_cosine_sim = torch.cosine_similarity(hidden_states[1:-1, traj_idx, :],
-        #                                                     hidden_states[2:, traj_idx, :], dim=-1).detach().cpu()
-        # else:
+
         hidden_cosine_sim = torch.zeros((z_batch.shape[0] - 2,))
 
         cpc_train_stats = CPCStats(cpc_loss, hidden_states.detach().clone(), z_dist,
