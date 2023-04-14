@@ -7,7 +7,7 @@ def get_args(rest_args):
 
     # --- GENERAL ---
 
-    parser.add_argument('--num_frames', type=int, default=1e8, help='number of frames to train')
+    parser.add_argument('--num_frames', type=int, default=2e8, help='number of frames to train')
     parser.add_argument('--max_rollouts_per_task', type=int, default=2, help='number of MDP episodes for adaptation')
     parser.add_argument('--exp_label', default='contrabar', help='label (typically name of method)')
     parser.add_argument('--env_name', default='AntGoal-v0', help='environment to train on')
@@ -54,7 +54,7 @@ def get_args(rest_args):
     parser.add_argument('--ppo_clip_param', type=float, default=0.05, help='clamp param')
 
     # other hyperparameters
-    parser.add_argument('--lr_policy', type=float, default=0.0003, help='learning rate (default: 7e-4)')
+    parser.add_argument('--lr_policy', type=float, default=0.001, help='learning rate (default: 7e-4)')
     parser.add_argument('--num_processes', type=int, default=16,
                         help='how many training CPU processes / parallel environments to use (default: 16)')
     parser.add_argument('--policy_num_steps', type=int, default=400,
@@ -84,7 +84,7 @@ def get_args(rest_args):
     parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--augment_for_policy', type=bool, default=False, help='weight trajectory steps?')
-    parser.add_argument('--lr_representation_learner', type=float, default=0.001)
+    parser.add_argument('--lr_representation_learner', type=float, default=0.0003)
     parser.add_argument('--subsample_cpc', type=float, default=1.)
     parser.add_argument('--num_trajs_representation_learning_buffer', type=int, default=1000,
                         help='how many trajectories (!) to keep in VAE buffer')
@@ -118,7 +118,7 @@ def get_args(rest_args):
     parser.add_argument('--encoder_gru_hidden_size', type=int, default=128, help='dimensionality of RNN hidden state')
     parser.add_argument('--encoder_layers_after_gru', nargs='+', type=int, default=[])
     parser.add_argument('--latent_dim', type=int, default=100, help='dimensionality of latent space')
-    parser.add_argument('--lookahead_factor', type=int, default=30, help='lookahead for CPC')
+    parser.add_argument('--lookahead_factor', type=int, default=10, help='lookahead for CPC')
 
 
     # - decoder: rewards

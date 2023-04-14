@@ -40,7 +40,7 @@ class contrabarCPC:
         # initialise the encoder
         self.encoder = self.initialise_encoder()
         if self.args.with_action_gru:
-            self.action_gru = actionGRU(input_dim=self.args.action_embedding_size + (self.args.latent_dim//2), hidden_dim=self.args.latent_dim).to(
+            self.action_gru = actionGRU(input_dim=self.args.action_embedding_size, hidden_dim=self.args.latent_dim).to(
                 device)
             self.action_gru_encoder = utl.FeatureExtractor(self.args.action_dim, self.args.action_embedding_size,
                                                            F.elu).to(device)
@@ -59,7 +59,7 @@ class contrabarCPC:
         elif self.args.density_model == 'NN':
             if self.args.with_action_gru:
                 cpc_clf = [MLP(
-                    z_dim + int(1.5*self.args.latent_dim))
+                    z_dim + 2*self.args.latent_dim)
                     for _ in range(1)]
             else:
                 cpc_clf = [MLP(
@@ -281,11 +281,11 @@ class contrabarCPC:
 
             hidden_for_action_gru = hidden_states[:-self.lookahead_factor, :, :].reshape(-1, hidden_states.shape[-1]).unsqueeze(0)
             hidden_for_action_gru = torch.tile(hidden_for_action_gru, (self.lookahead_factor, 1, 1))
-            action_hidden_concat = torch.concat([a_for_gru, hidden_for_action_gru[...,:self.args.latent_dim // 2]], dim=-1)
+            # action_hidden_concat = torch.concat([a_for_gru, hidden_for_action_gru[...,:self.args.latent_dim // 2]], dim=-1)
             states_for_action_gru = self.action_gru_state_encoder(prev_obs)[:-self.lookahead_factor, :, :].reshape(-1, self.args.latent_dim)
             #a_latent, _ = self.action_gru(a_for_gru, hidden_for_action_gru.unsqueeze(0))
-            a_latent, _ = self.action_gru(action_hidden_concat, states_for_action_gru.unsqueeze(0))
-            a_latent = torch.concat([a_latent, hidden_for_action_gru[...,self.args.latent_dim // 2:]], dim=-1)
+            a_latent, _ = self.action_gru(a_for_gru, states_for_action_gru.unsqueeze(0))
+            a_latent = torch.concat([a_latent, hidden_for_action_gru], dim=-1)
             a_latent = a_latent.view(self.lookahead_factor, trajectory_lens.max() - self.lookahead_factor,
                                      hidden_states.shape[1], -1)
             z_a_gru_pos = [
