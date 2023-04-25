@@ -76,7 +76,7 @@ def get_args(rest_args):
     # --- REP LEARNER TRAINING ---
 
     # cpc
-    parser.add_argument('--negative_factor', type=int, default=16, help='number of negative samples for CPC')
+    parser.add_argument('--negative_factor', type=int, default=25, help='number of negative samples for CPC')
     parser.add_argument('--sampling_method', type=str, default='negative_rewards', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
     # general
     parser.add_argument('--with_action_gru', type=boolean_argument, default=True, help='include action_gru to contrast beliefs')
