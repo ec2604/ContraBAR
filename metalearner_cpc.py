@@ -1,6 +1,6 @@
 import os
 import time
-# import wandb
+import wandb
 import gym
 import numpy as np
 import torch
@@ -37,8 +37,8 @@ class MetaLearner:
         self.num_updates = int(args.num_frames) // args.policy_num_steps // args.num_processes
         self.frames = 0
         self.iter_idx = -1
-        # wandb.init(project='varibad_cpc', config=self.args, tags=[self.args.env_name], sync_tensorboard=True,
-        #            name=self.args.exp_label + '_' + str(args.seed) + '_' + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S'), dir='/mnt/data/erac/')
+        wandb.init(project='varibad_cpc', config=self.args, tags=[self.args.env_name], sync_tensorboard=True,
+                   name=self.args.exp_label + '_' + str(args.seed) + '_' + datetime.datetime.now().strftime('_%d:%m_%H:%M:%S'), dir='/mnt/data/erac/')
         # initialise tensorboard logger
         self.logger = TBLogger(self.args, self.args.exp_label)
 
@@ -392,7 +392,7 @@ class MetaLearner:
                 self.logger.add('return_std_per_iter/episode_{}'.format(k + 1), returns_std[k], self.iter_idx)
                 self.logger.add('return_std_per_frame/episode_{}'.format(k + 1), returns_std[k], self.frames)
             self.logger.add('delta_avg_from_intial', delta_from_initial, self.iter_idx)
-            # wandb.log({'return_avg_per_iter_episode_1': returns_avg[0]}, step=self.iter_idx)
+            wandb.log({'return_avg_per_iter_episode_1': returns_avg[0]}, step=self.iter_idx)
             self.log_cpc_stats(stats=eval_cpc_stats, log_prefix='eval')
             if self.args.evaluate_representation and self.args.evaluate_start_iter < self.iter_idx:
                 self.log_evaluator_stats('eval', eval_evaluator_stats)

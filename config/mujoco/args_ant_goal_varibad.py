@@ -7,7 +7,7 @@ def get_args(rest_args):
 
     # --- GENERAL ---
 
-    parser.add_argument('--num_frames', type=int, default=1e8, help='number of frames to train')
+    parser.add_argument('--num_frames', type=int, default=2e8, help='number of frames to train')
     parser.add_argument('--max_rollouts_per_task', type=int, default=2, help='number of MDP episodes for adaptation')
     parser.add_argument('--exp_label', default='contrabar', help='label (typically name of method)')
     parser.add_argument('--env_name', default='AntGoal-v0', help='environment to train on')
@@ -29,7 +29,7 @@ def get_args(rest_args):
     parser.add_argument('--policy_task_embedding_dim', type=int, default=None)
 
     # normalising (inputs/rewards/outputs)
-    parser.add_argument('--norm_state_for_policy', type=boolean_argument, default=False, help='normalise state input')
+    parser.add_argument('--norm_state_for_policy', type=boolean_argument, default=True, help='normalise state input')
     parser.add_argument('--norm_latent_for_policy', type=boolean_argument, default=False, help='normalise latent input')
     parser.add_argument('--norm_task_for_policy', type=boolean_argument, default=True, help='normalise task input')
     parser.add_argument('--norm_rew_for_policy', type=boolean_argument, default=True, help='normalise rew for RL train')
@@ -76,15 +76,15 @@ def get_args(rest_args):
     # --- REP LEARNER TRAINING ---
 
     # cpc
-    parser.add_argument('--negative_factor', type=int, default=16, help='number of negative samples for CPC')
-    parser.add_argument('--sampling_method', type=str, default='fast', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
+    parser.add_argument('--negative_factor', type=int, default=25, help='number of negative samples for CPC')
+    parser.add_argument('--sampling_method', type=str, default='negative_rewards', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
     # general
     parser.add_argument('--with_action_gru', type=boolean_argument, default=True, help='include action_gru to contrast beliefs')
     parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
     parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--augment_for_policy', type=bool, default=False, help='weight trajectory steps?')
-    parser.add_argument('--lr_representation_learner', type=float, default=0.001)
+    parser.add_argument('--lr_representation_learner', type=float, default=0.0003)
     parser.add_argument('--subsample_cpc', type=float, default=1.)
     parser.add_argument('--num_trajs_representation_learning_buffer', type=int, default=1000,
                         help='how many trajectories (!) to keep in VAE buffer')
@@ -117,8 +117,8 @@ def get_args(rest_args):
     parser.add_argument('--encoder_layers_before_gru', nargs='+', type=int, default=[])
     parser.add_argument('--encoder_gru_hidden_size', type=int, default=128, help='dimensionality of RNN hidden state')
     parser.add_argument('--encoder_layers_after_gru', nargs='+', type=int, default=[])
-    parser.add_argument('--latent_dim', type=int, default=50, help='dimensionality of latent space')
-    parser.add_argument('--lookahead_factor', type=int, default=30, help='lookahead for CPC')
+    parser.add_argument('--latent_dim', type=int, default=100, help='dimensionality of latent space')
+    parser.add_argument('--lookahead_factor', type=int, default=10, help='lookahead for CPC')
 
 
     # - decoder: rewards

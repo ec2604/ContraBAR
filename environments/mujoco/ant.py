@@ -103,7 +103,7 @@ class AntEnv(MujocoEnv):
         env.reset_task()
         state, task = utl.reset_env(env, args)
         start_obs_raw = state.clone()
-        start_img = rgb2gray(self.render('rgb_array', height=64, width=64))
+        # start_img = rgb2gray(self.render('rgb_array', height=64, width=64))
         #task = task.view(-1) if task is not None else None
 
         # initialise actions and rewards (used as initial input to policy if we have a recurrent policy)

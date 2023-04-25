@@ -44,7 +44,7 @@ class AntGoalEnv(AntEnv):
         a = np.array([random.random() for _ in range(num_tasks)]) * 2*np.pi
         #r = 1 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
         #a = np.array([0.75 for _ in range(num_tasks)]) * np.pi
-        r = 1 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
+        r = 3 * np.array([random.random() for _ in range(num_tasks)]) ** 0.5
         #self.wind = np.array([random.random() * 0.1 - 0.05,random.random() * 0.1 - 0.05])
         return np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
 

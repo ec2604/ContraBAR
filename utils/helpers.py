@@ -543,6 +543,21 @@ def collect_data(env, args, policy, encoder=None ):
     return episode_hidden_states, episode_prev_obs, episode_next_obs, episode_actions, episode_rewards, \
            episode_returns, episode_pos, task
 
+def sample_goal_func(pos, negative_sampling_factor):
+    a = np.random.random(size=(*pos.shape[:-1], negative_sampling_factor)) * 2 * np.pi
+    r = 3 * np.random.random(size=(*pos.shape[:-1], negative_sampling_factor)) ** 0.5
+    return np.stack((r * np.cos(a), r * np.sin(a)), axis=-1)
+
+def relabel_func(pos, negative_sampling_factor, rewards, tasks):
+    goals = sample_goal_func(pos, negative_sampling_factor)
+    pos = pos.unsqueeze(-2).tile(1,1,negative_sampling_factor,1)
+    tasks = tasks.unsqueeze(0).unsqueeze(2).tile(pos.shape[0], 1, pos.shape[2], 1)
+    rewards = rewards.unsqueeze(-2).tile(1,1, negative_sampling_factor, 1)
+    rewards += torch.abs(pos - tasks).sum(dim=-1, keepdim=True)
+    rewards -= torch.abs(pos - torch.from_numpy(goals).to(device=device)).sum(dim=-1, keepdim=True)
+    return rewards
+
+
 # from rl_games.common import env_configurations, vecenv
 # from rl_games.common.algo_observer import AlgoObserver
 # from rl_games.algos_torch import torch_ext
