@@ -29,7 +29,6 @@ class MetaLearner:
     """
 
     def __init__(self, args):
-        model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_90__16:09_21:25:28/'
         self.args = args
         utl.seed(self.args.seed, self.args.deterministic_execution)
 
@@ -43,8 +42,7 @@ class MetaLearner:
         self.logger = TBLogger(self.args, self.args.exp_label)
 
         # initialise environments
-        # with open(model_location + 'models/env_rew_rms.pkl', 'rb') as f:
-        #     a = pickle.load(f)
+
         self.envs = make_vec_envs(env_name=args.env_name, seed=args.seed, num_processes=args.num_processes,
                                   gamma=args.policy_gamma, device=device,
                                   episodes_per_task=self.args.max_rollouts_per_task,
@@ -90,14 +88,9 @@ class MetaLearner:
 
         # initialise CPC and policy
         self.cpc_encoder = contrabarCPC(self.args, self.logger, lambda: self.iter_idx)
-        # encoder = torch.load(model_location + 'models/encoder.pt')
-        # policy = torch.load(model_location + 'models/policy.pt')
-        # self.cpc_encoder.encoder = encoder
         self.policy_storage = self.initialise_policy_storage()
         self.policy = self.initialise_policy()
-        # self.policy.actor_critic = policy
-        # with open('/mnt/data/erac/test_storage.pt', 'rb') as f:
-        #     self.cpc_encoder.rollout_storage = torch.load(f)
+
 
     def initialise_policy_storage(self):
         return CPCOnlineStorage(args=self.args,
@@ -107,7 +100,7 @@ class MetaLearner:
                                 latent_dim=self.args.latent_dim,
                                 task_dim=self.args.task_dim,
                                 action_space=self.args.action_space,
-                                hidden_size=self.args.latent_dim,  # self.args.encoder_gru_hidden_size,
+                                hidden_size=self.args.latent_dim,
                                 normalise_rewards=self.args.norm_rew_for_policy,
                                 )
 
@@ -163,16 +156,11 @@ class MetaLearner:
             self.log(None, None, None, None, start_time)
 
         for self.iter_idx in range(self.num_updates):
-            # prev_state_underlying = torch.from_numpy(np.stack([method() for method in self.envs.venv.get_states()]))
-            # prev_state_underlying = torch.cat([prev_state_underlying, torch.zeros(prev_state_underlying.shape[0],1,*prev_state_underlying.shape[2:])],
-            #                                   dim=1).to(device).float()
-            #
             # First, re-compute the hidden states given the current rollouts (since the CPC might've changed)
             with torch.no_grad():
                 hidden_state = self.encode_running_trajectory()
 
             # add this initial hidden state to the policy storage
-            # hidden_state = torch.zeros((1, self.args.num_processes, self.args.latent_dim)).to(device)
             self.policy_storage.hidden_states[0].copy_(hidden_state.squeeze(0))
             # rollout policies for a few steps
             for step in range(self.args.policy_num_steps):
@@ -180,24 +168,13 @@ class MetaLearner:
                 with torch.no_grad():
                     value, action = utl.select_action_cpc(args=self.args, policy=self.policy, deterministic=False,
                                                           hidden_latent=hidden_state.squeeze(0),
-                                                          # state=prev_state_underlying,
                                                           state=prev_state,
                                                           task=task)
 
                 # take step in the environment
                 [next_state, task], (rew_raw, rew_normalised), done, infos = utl.env_step(self.envs, action,
                                                                                    self.args)
-                if 'underlying_state_dim' in self.args and len(self.args.underlying_state_dim) > 0:
-                    underlying_states = torch.from_numpy(np.stack([info['state'] for info in infos],axis=0)).to(device)
-                else:
-                    underlying_states = None
-                # rew_cpc = torch.from_numpy(np.stack([info['goal_forward'] >= 0.3 for info in infos],axis=0)).reshape(-1,1).float().to(device)
-                # underlying_states = torch.from_numpy(np.stack([method() for method in self.envs.venv.get_states()])).to(device)
-                # if done[0]:
-                #     underlying_states = torch.cat([underlying_states, torch.ones(underlying_states.shape[0],1,*underlying_states.shape[2:]).to(device)], dim=1).float()
-                # else:
-                #     underlying_states = torch.cat([underlying_states, torch.zeros(underlying_states.shape[0],1,*underlying_states.shape[2:]).to(device)],
-                #                                   dim=1).float()
+
                 done = torch.from_numpy(np.array(done, dtype=int)).to(device).float().view((-1, 1))
                 # create mask for episode ends
                 masks_done = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done]).to(device)
@@ -210,10 +187,8 @@ class MetaLearner:
                     hidden_state = utl.update_encoding_cpc(
                         encoder=self.cpc_encoder.encoder,
                         next_obs=next_state,
-                        # next_obs=underlying_states,
                         action=action,
                         reward=rew_raw,
-                        # reward=rew_cpc,
                         done=done,
                         hidden_state=hidden_state)
 
@@ -221,8 +196,7 @@ class MetaLearner:
                 # (last state might include useful task info)
                 self.cpc_encoder.rollout_storage.insert(prev_state.clone(), action.clone(), next_state.clone(),
                                                         rew_raw.clone(),
-                                                        # rew_cpc.clone(),
-                                                        done.clone(), task.clone(), None)#underlying_states.clone() if underlying_states is not None else underlying_states)
+                                                        done.clone(), task.clone(), None)
 
                 # add the obs before reset to the policy storage
                 self.policy_storage.next_state[step] = next_state.clone()
@@ -240,20 +214,14 @@ class MetaLearner:
                                            hidden_states=hidden_state.squeeze(0))
 
                 prev_state = next_state
-                # prev_state_underlying = underlying_states
                 self.frames += self.args.num_processes
 
             # --- UPDATE ---
             if self.args.precollect_len > self.frames:
                 print(f'Precollect frames so far: {self.frames}', flush=True)
             else:
-                # with open('./test_storage.pt', 'wb') as f:
-                #     torch.save(self.cpc_encoder.rollout_storage, f
-                #                )
-                # exit(0)
                 # check if we are pre-training the representation learner
                 if self.args.pretrain_len > self.iter_idx:
-                    #for p in range(20):  # range(self.args.num_representation_learner_updates_per_pretrain):
                     cpc_pretrain_stats = self.cpc_encoder.update_cpc()
                     if (self.iter_idx % 20) == 0:
                         print(f'Iteration {self.iter_idx}: {cpc_pretrain_stats.cpc_loss}',flush=True)
@@ -320,8 +288,6 @@ class MetaLearner:
                                                 use_proper_time_limits=self.args.use_proper_time_limits)
 
             # update agent
-            # if self.iter_idx == 4000:
-            #     self.policy = self.initialise_policy()
             policy_train_stats = self.policy.policy_update(policy_storage=self.policy_storage)
             representation_learner_train_stats = self.cpc_encoder.update_cpc()
             if self.args.evaluate_representation and self.iter_idx >= self.args.evaluate_start_iter:
@@ -353,7 +319,6 @@ class MetaLearner:
 
         # --- visualise behaviour of policy ---
 
-        #if ((self.iter_idx + 1) % self.args.vis_interval == 0 and self.visualize) or (((self.iter_idx + 1) % (20*self.args.vis_interval) == 0)):
         if ((self.iter_idx + 1) % self.args.vis_interval == 0):
             ret_rms = self.envs.venv.ret_rms if self.args.norm_rew_for_policy else None
             utl_eval.visualise_behaviour(args=self.args,
@@ -370,7 +335,6 @@ class MetaLearner:
 
         # --- evaluate policy ----
         if (self.iter_idx + 1) % self.args.eval_interval == 0:
-            # if  (self.iter_idx + 1) % self.args.vis_interval == 1:
             ret_rms = self.envs.venv.ret_rms if self.args.norm_rew_for_policy else None
             returns_per_episode, eval_cpc_stats, eval_evaluator_stats = utl_eval.evaluate(args=self.args,
                                                                                           policy=self.policy,
@@ -439,6 +403,9 @@ class MetaLearner:
             # utl.plot_grad_flow(self.cpc_encoder.encoder.named_parameters(), 'encoder_gradient_flow', self.logger, self.iter_idx)
             if self.args.with_action_gru:
                 utl.plot_grad_flow(self.cpc_encoder.action_gru.named_parameters(), 'action_gru_gradient_flow', self.logger, self.iter_idx)
+
+            #Uncomment to see log gradients for other components
+
             # utl.plot_grad_flow(self.cpc_encoder.mlp.named_parameters(), 'mlp_gradient_flow',self.logger, self.iter_idx)
             # utl.plot_grad_flow(self.policy.actor_critic.named_parameters(), 'policy_gradient_flow', self.logger, self.iter_idx)
             # log the average weights and gradients of all models (where applicable)
