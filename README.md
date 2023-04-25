@@ -1,10 +1,5 @@
-# VariBAD
+# ContraBAR: Contrastive Bayes-Adaptive Deep RL
 
-Code for the paper "[ContraBAR: Contrastive Bayes-Adaptive Deep RL]
-
-```
-
-```
 
 > ! Important !
 > 
@@ -29,7 +24,6 @@ Make sure you have the right MuJoCo version:
 because there's a bug which leads to 80% of the env state being zero).
 - For Walker/Hopper, use `mujoco131`.
 
-For `mujoco131`, use: `gym==0.9.1 gym[mujoco]==0.9.1 mujoco-py==0.5.7`
 
 ### Overview
 
@@ -64,3 +58,7 @@ You can overwrite any default hyperparameters using command line arguments.
 Results will be written to tensorboard event files, 
 and some visualisations will be printed every now and then.
 
+### Citation
+
+### Communication
+For any questions, please contact Era Choshen: ```erachoshen@gmail.com```
