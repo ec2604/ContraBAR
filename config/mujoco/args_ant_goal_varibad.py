@@ -79,7 +79,7 @@ def get_args(rest_args):
     parser.add_argument('--negative_factor', type=int, default=25, help='number of negative samples for CPC')
     parser.add_argument('--sampling_method', type=str, default='negative_rewards', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
     # general
-    parser.add_argument('--with_action_gru', type=boolean_argument, default=True, help='include action_gru to contrast beliefs')
+    parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
     parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
     parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')

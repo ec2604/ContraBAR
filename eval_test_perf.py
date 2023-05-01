@@ -25,26 +25,27 @@ import numpy as np
 from scipy import stats
 
 
-# methods = ['varibad', 'cpc', 'recurrent']
-methods = ['cpc', 'rl2']
+methods = ['varibad', 'cpc', 'recurrent']
+# methods = ['cpc', 'rl2']
 
 # methods = ['cpc']
-# my_envs = {'Cheetah-Dir': 'cheetah_dir',
-#            'Ant-Dir': 'ant_dir',
-#            'Cheetah-Vel': 'cheetah_vel',
-#            'Humanoid-Dir': 'humanoid',
-#            'Walker': 'walker',
-#            'Ant-Goal': 'ant_goal'}
-my_envs = {'Reacher': 'reacher',
-           'Panda Reacher': 'custom_reacher',
-           'Panda Wind': 'custom_wind_reacher',
-}
+my_envs = {'Cheetah-Dir': 'cheetah_dir',
+           'Ant-Dir': 'ant_dir',
+           'Cheetah-Vel': 'cheetah_vel',
+           'Humanoid-Dir': 'humanoid',
+           'Walker': 'walker',
+           'Ant-Goal': 'ant_goal'}
+# my_envs = {'Ant-Goal': 'ant_goal_no_gru'}
+# my_envs = {'Reacher': 'reacher',
+#            'Panda Reacher': 'custom_reacher',
+#            'Panda Wind': 'custom_wind_reacher',
+# }
 
 my_colors = {
-    # 'varibad': sns.color_palette("bright", 10)[8],
-    'rl2': sns.color_palette("deep", 10)[6],
+    'varibad': sns.color_palette("bright", 10)[8],
+    # 'rl2': sns.color_palette("deep", 10)[6],
     'cpc': sns.color_palette("bright", 10)[3],
-    # 'recurrent': sns.color_palette("bright", 10)[5]
+    'recurrent': sns.color_palette("bright", 10)[5]
 }
 my_labels = {
     'varibad': 'VariBAD',
@@ -61,25 +62,29 @@ my_linestyles = {
     'recurrent': '-.'
     }
 my_files = {
-    # 'varibad': 'varibad',
+    'varibad': 'varibad',
     'cpc': 'contrabar',
-    'rl2': 'rl2',
-    # 'recurrent': 'recurrent'
+    # 'rl2': 'rl2',
+    'recurrent': 'recurrent'
 }
 
 # plot results for each env and method
 set_default_plot_params()
-# fig, ax = plt.subplots(2, 3, figsize=(15,8))
-fig, ax = plt.subplots(1, 3, figsize=(15,6))
+# fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+# ax = np.array([ax])
+fig, ax = plt.subplots(2, 3, figsize=(15,8))
+# fig, ax = plt.subplots(1, 3, figsize=(15,6))
 
 for i, (env_key, env_val) in enumerate(my_envs.items()):
     for method in methods:
+        print(method)
 
         # read in x-values (steps)
         # read in y-values (returns)
         try:
             y = np.load(f'/home/erac/varibad_cpc/end_performance_per_episode/{env_val}_' + my_files[method] + '.npy')
         except:
+            print('fail')
             continue
         x = np.arange(1, y.shape[1]+1).astype(np.int)
 
@@ -94,7 +99,7 @@ for i, (env_key, env_val) in enumerate(my_envs.items()):
     ax.reshape(-1)[i].set_title(f'{env_key}')
     ax.reshape(-1)[i].set_xticks(range(1, 6))
     ax.reshape(-1)[i].grid()
-    img = True
+    img = False
     if img:
         if i == 0:
             ax.reshape(-1)[i].set_ylim([0, 50])
@@ -120,5 +125,6 @@ for i, (env_key, env_val) in enumerate(my_envs.items()):
 
 
 # plt.show()
-plt.tight_layout(h_pad=0.3, w_pad=0.3)#plt.tight_layout(w_pad=0.5)
-plt.savefig('./test_perf_image')
+# plt.tight_layout(h_pad=0.3, w_pad=0.3)
+plt.tight_layout(w_pad=0.5)
+plt.savefig('./test_perf')
