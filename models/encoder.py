@@ -6,7 +6,6 @@ from torch.nn import functional as F
 from math import floor
 from utils import helpers as utl
 from torch.nn.utils import spectral_norm
-from models import GRU_layernorm
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 

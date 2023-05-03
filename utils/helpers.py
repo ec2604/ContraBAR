@@ -1,46 +1,15 @@
 import os
 import pickle
-# import pickle5 as pickle
 import random
-import warnings
 from distutils.util import strtobool
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
 import matplotlib.pyplot as plt
 from environments.parallel_envs import make_vec_envs
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-
-# def save_models(args, logger, policy, vae, envs, iter_idx):
-#     # TODO: save parameters, not entire model
-#
-#     save_path = os.path.join(logger.full_output_folder, 'models')
-#     if not os.path.exists(save_path):
-#         os.mkdir(save_path)
-#     try:
-#         torch.save(policy.actor_critic, os.path.join(save_path, "policy{0}.pt".format(iter_idx)))
-#     except AttributeError:
-#         torch.save(policy.policy, os.path.join(save_path, "policy{0}.pt".format(iter_idx)))
-#     torch.save(vae.encoder, os.path.join(save_path, "encoder{0}.pt".format(iter_idx)))
-#     if vae.state_decoder is not None:
-#         torch.save(vae.state_decoder, os.path.join(save_path, "state_decoder{0}.pt".format(iter_idx)))
-#     if vae.reward_decoder is not None:
-#         torch.save(vae.reward_decoder,
-#                    os.path.join(save_path, "reward_decoder{0}.pt".format(iter_idx)))
-#     if vae.task_decoder is not None:
-#         torch.save(vae.task_decoder, os.path.join(save_path, "task_decoder{0}.pt".format(iter_idx)))
-#
-#     # save normalisation params of envs
-#     if args.norm_rew_for_policy:
-#         rew_rms = envs.venv.ret_rms
-#         save_obj(rew_rms, save_path, "env_rew_rms{0}.pkl".format(iter_idx))
-#     if args.norm_obs_for_policy:
-#         obs_rms = envs.venv.obs_rms
-#         save_obj(obs_rms, save_path, "env_obs_rms{0}.pkl".format(iter_idx))
 
 
 def reset_env(env, args, indices=None, state=None, **kwargs):
@@ -276,15 +245,6 @@ def clip(value, low, high):
     return clipped_value
 
 
-def get_pos_grid(pos, device):
-    X_SIZE = 5
-    Y_SIZE = 5
-    grid = torch.zeros(len(pos), X_SIZE * Y_SIZE, dtype=torch.float32, device=device)
-    idx = torch.tensor(np.array([pos_[0] * (Y_SIZE) + pos_[1] for pos_ in pos]), device=device).view(-1, 1)
-    grid.scatter_(dim=1, index=idx, src=torch.full_like(grid, fill_value=1))
-    return grid.view(-1, X_SIZE, Y_SIZE)
-
-
 def rgb2gray(rgb):
     gray = 0.2989 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
     return np.expand_dims(gray, axis=0)
@@ -322,9 +282,7 @@ def plot_grad_flow(named_parameters, figure_name, logger, iter_idx):
     logger.add_figure(figure_name, fig, iter_idx)
 
 
-import torch
-import torch.nn.functional as F
-from torch import nn
+
 
 
 class InfoNCE(nn.Module):
@@ -528,12 +486,7 @@ def collect_data(env, args, policy, encoder=None ):
         episode_lengths.append(step_idx)
 
     # clean up
-    # print(episode_prev_obs[0][0].shape)
-    # print(episode_next_obs[0][0].shape)
-    # print(episode_hidden_states[0][0].shape)
-    # print(episode_actions[0][0].shape)
-    # print(episode_rewards[0][0].shape)
-    # print(task.shape)
+
     episode_pos = np.concatenate([np.stack(p, axis=1)[:, :50, ...] for p in pos], axis=1)
     episode_prev_obs = torch.concat([torch.stack(e ,dim=1) for e in episode_prev_obs],dim=1)
     episode_next_obs = torch.concat([torch.stack(e, dim=1) for e in episode_next_obs], dim=1)
@@ -557,69 +510,6 @@ def relabel_func(pos, negative_sampling_factor, rewards, tasks):
     rewards -= torch.abs(pos - torch.from_numpy(goals).to(device=device)).sum(dim=-1, keepdim=True)
     return rewards
 
-
-# from rl_games.common import env_configurations, vecenv
-# from rl_games.common.algo_observer import AlgoObserver
-# from rl_games.algos_torch import torch_ext
-# from isaacgymenvs.utils.utils import set_seed
-# import torch
-# import numpy as np
-# from typing import Callable
-#
-# from environments.isaacgym import quadcopter_bamdp
-#
-# def get_rlgames_env_creator(
-#         # used to create the vec task
-#         seed: int,
-#         task_config: dict,
-#         task_name: str,
-#         sim_device: str,
-#         rl_device: str,
-#         graphics_device_id: int,
-#         headless: bool,
-#         # Used to handle multi-gpu case
-#         multi_gpu: bool = False,
-#         post_create_hook: Callable = None,
-#         virtual_screen_capture: bool = False,
-#         force_render: bool = False,
-# ):
-#     """Parses the configuration parameters for the environment task and creates a VecTask
-#     Args:
-#         task_config: environment configuration.
-#         task_name: Name of the task, used to evaluate based on the imported name (eg 'Trifinger')
-#         sim_device: The type of env device, eg 'cuda:0'
-#         rl_device: Device that RL will be done on, eg 'cuda:0'
-#         graphics_device_id: Graphics device ID.
-#         headless: Whether to run in headless mode.
-#         multi_gpu: Whether to use multi gpu
-#         post_create_hook: Hooks to be called after environment creation.
-#             [Needed to setup WandB only for one of the RL Games instances when doing multiple GPUs]
-#         virtual_screen_capture: Set to True to allow the users get captured screen in RGB array via `env.render(mode='rgb_array')`.
-#         force_render: Set to True to always force rendering in the steps (if the `control_freq_inv` is greater than 1 we suggest stting this arg to True)
-#     Returns:
-#         A VecTaskPython object.
-#     """
-#     def create_rlgpu_env():
-#         """
-#         Creates the task from configurations and wraps it using RL-games wrappers if required.
-#         """
-#
-#         # create native task and pass custom config
-#         env = quadcopter_bamdp.QuadcopterBAMDP(
-#             cfg=task_config,
-#             rl_device=rl_device,
-#             sim_device=sim_device,
-#             graphics_device_id=graphics_device_id,
-#             headless=headless,
-#             virtual_screen_capture=virtual_screen_capture,
-#             force_render=force_render,
-#         )
-#
-#         if post_create_hook is not None:
-#             post_create_hook()
-#
-#         return env
-#     return create_rlgpu_env
 
 # ±def get_linear_layer_memory_bytes(action_size, embedding_size):
 #     return 4*action_size * embedding_size

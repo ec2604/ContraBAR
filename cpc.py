@@ -6,8 +6,8 @@ import kornia
 from utils import helpers as utl
 from models.encoder import RNNCPCEncoder
 from models.cpc_modules import MLP, actionGRU, statePredictor, CPCMatrix
-from utils.helpers import get_task_dim, get_num_tasks, get_pos_grid, InfoNCE, generate_predictor_input, relabel_func
-from utils.storage_vae import RolloutStorage
+from utils.helpers import get_task_dim, generate_predictor_input, relabel_func
+from utils.storage_cpc import RolloutStorage
 from collections import namedtuple
 
 

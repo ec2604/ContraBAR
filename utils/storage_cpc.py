@@ -9,7 +9,7 @@ class RolloutStorage(object):
                  state_dim, action_dim, representation_learner_buffer_add_thresh, task_dim,
                  underlying_state_dim=0):
         """
-        Store everything that is needed for the VAE update
+        Store everything that is needed for the CPC update
         :param num_processes:
         """
 

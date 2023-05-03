@@ -15,8 +15,17 @@
 
 We use PyTorch for this code, and log results using TensorboardX.
 
-The main requirements can be found in `requirements.txt`. 
+Because the different mujoco environments require different versions, we supply
+three seperate requirement files:
+ - `requirements_131.txt`
+ - `requirements_150.txt`
+ - `requirements_200.txt`
 
+For `mujoco131`, `mujoco150` and `mujoco200` respectively. 
+
+##### We note that non-mujoco environments should all work with `requirements_200`.
+
+#### Mujoco:
 For the MuJoCo experiments, you need to install MuJoCo.
 Make sure you have the right MuJoCo version:
 - For the Cheetah and Ant environments, use `mujoco150`. 
@@ -24,7 +33,18 @@ Make sure you have the right MuJoCo version:
 because there's a bug which leads to 80% of the env state being zero).
 - For Walker/Hopper, use `mujoco131`.
 
+#### Reacher environment:
 
+For the reacher environment, dm_control was slightly modified to include
+transparent target, which replaces the target in the classic reacher env.
+This code is in a fork of dm_control which is referenced in requirements_200.txt:
+[Modified dm_control package](https://github.com/ec2604/dm_control)
+
+#### Panda-gym environment:
+ 
+For the custom_reach task for the panda-gym environment, panda-gym was
+slightly modified - this modification is in a fork referenced in requirements_200.txt : 
+[Modified panda-gym package](https://github.com/ec2604/panda-gym)
 ### Overview
 
 The main training loop for ContraBAR can be found in `metalearner_cpc.py`,

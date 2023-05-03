@@ -16,7 +16,7 @@ from utils import helpers as utl
 from utils.tb_logger import TBLogger
 from cpc import contrabarCPC
 from models.encoder import ImageEncoder
-from utils.storage_vae import RolloutStorage
+from utils.storage_cpc import RolloutStorage
 import datetime
 import pickle
 
