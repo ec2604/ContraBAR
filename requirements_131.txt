@@ -9,7 +9,7 @@ moviepy==1.0.3
 mujoco-py==0.5.7
 numpy
 opencv-python==4.6.0.66
-panda-gym==2.0.4
+panda-gym @ git+https://github.com/ec2604/panda-gym.git@ea54950bee1e8ae42b03dd7526bffac8764e5b90
 pybullet==3.2.5
 scipy==1.7.3
 tensorboard==2.10.0

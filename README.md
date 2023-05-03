@@ -34,18 +34,13 @@ There's quite a bit of documentation in the respective scripts so have a look th
 
 ### Running an experiment
 
-To train ContraBAR on the gridworld from the paper, run
-
-`python main.py --env-type gridworld_varibad`
-
-which will use hyperparameters from `config/gridworld/args_grid_varibad.py`. 
-
-To train contraBAR on the MuJoCo experiments use:
+To train contraBAR on the different environments use:
 ```
-python main.py --env-type cheetah_dir_contrabar
-python main.py --env-type cheetah_vel_contrabar
-python main.py --env-type ant_dir_contrabar
-python main.py --env-type walker_contrabar
+python main.py --env-type ENV
+```
+For example
+```
+python main.py --env-type pointrobot_contrabar
 ```
 
 

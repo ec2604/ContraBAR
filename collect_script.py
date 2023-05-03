@@ -1,9 +1,9 @@
 import argparse
-from config.dm_control import args_reacher_varibad, args_sparse_reacher_varibad
-from config.pointrobot import args_pointrobot_varibad
-from config.pointrobot import args_pointrobot_image_varibad
-from config.mujoco import args_sparse_ant_goal_varibad
-from config.panda_gym import args_sparse_panda_reacher_varibad, args_sparse_panda_reacher_wind_varibad
+from config.dm_control import args_reacher_contrabar, args_sparse_reacher_contrabar
+from config.pointrobot import args_pointrobot_contrabar
+from config.pointrobot import args_pointrobot_image_contrabar
+from config.mujoco import args_sparse_ant_goal_contrabar
+from config.panda_gym import args_sparse_panda_reacher_contrabar, args_sparse_panda_reacher_wind_contrabar
 from environments.parallel_envs import make_vec_envs,make_env
 from tqdm import tqdm
 import utils.helpers as utl
@@ -17,7 +17,7 @@ if __name__ == '__main__':
     args, rest_args = parser.parse_known_args()
     # args = args_sparse_panda_reacher_varibad.get_args(rest_args)
     # args = args_sparse_panda_reacher_wind_varibad.get_args(rest_args)
-    args = args_pointrobot_varibad.get_args(rest_args)
+    args = args_pointrobot_contrabar.get_args(rest_args)
     # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_90__16:09_21:25:28/'
     # model_location = '/mnt/data/erac/logs_CustomReach-v0/contrabar_16__23:09_20:19:52/'
     # model_location = '/mnt/data/erac/logs_CustomReachWind-v0/contrabar_88__16:11_11:03:02/'

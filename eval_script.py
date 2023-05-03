@@ -1,10 +1,10 @@
 import argparse
-from config.dm_control import args_reacher_varibad, args_sparse_reacher_varibad
-from config.pointrobot import args_pointrobot_image_varibad
-from config.mujoco import args_sparse_ant_goal_varibad, args_cheetah_dir_varibad, args_cheetah_vel_varibad
-from config.panda_gym import args_sparse_panda_reacher_varibad, args_sparse_panda_reacher_wind_varibad
+from config.dm_control import args_reacher_contrabar, args_sparse_reacher_contrabar
+from config.pointrobot import args_pointrobot_image_contrabar
+from config.mujoco import args_sparse_ant_goal_contrabar, args_cheetah_dir_contrabar, args_cheetah_vel_contrabar
+from config.panda_gym import args_sparse_panda_reacher_contrabar, args_sparse_panda_reacher_wind_contrabar
 # from config.mujoco import args_peg_insertion_image_varibad, args_walker_varibad
-from config.mujoco import args_ant_dir_varibad, args_ant_goal_varibad, args_humanoid_dir_varibad
+from config.mujoco import args_ant_dir_contrabar, args_ant_goal_contrabar, args_humanoid_dir_contrabar
 from cpc import contrabarCPC
 from scipy import stats
 from environments.parallel_envs import make_vec_envs
@@ -82,7 +82,7 @@ def main(model_location=None):
     # args = args_peg_insertion_image_varibad.get_args(rest_args)
     # args = args_ant_dir_varibad.get_args(rest_args)
     # args = args_cheetah_dir_varibad.get_args(rest_args)
-    args = args_ant_goal_varibad.get_args(rest_args)
+    args = args_ant_goal_contrabar.get_args(rest_args)
     # args = args_walker_varibad.get_args(rest_args)
     # args = args_humanoid_dir_varibad.get_args(rest_args)
     # args = args_sparse_panda_reacher_wind_varibad.get_args(rest_args)
