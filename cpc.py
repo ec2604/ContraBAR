@@ -2,10 +2,11 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import kornia
 from utils import helpers as utl
 from models.encoder import RNNCPCEncoder
-from models.cpc_modules import MLP, actionGRU, statePredictor, CPCMatrix
+from models.cpc_modules import MLP, actionGRU, statePredictor
 from utils.helpers import get_task_dim, generate_predictor_input, relabel_func
 from utils.storage_cpc import RolloutStorage
 from collections import namedtuple

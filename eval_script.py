@@ -37,6 +37,7 @@ ant_goal_gru_exps = ['contrabar_44__18:04_21:55:26/',
                      'contrabar_48__22:04_09:11:04/',
                      'contrabar_49__23:04_21:14:18/',
                      'contrabar_50__23:04_21:14:45/']
+ant_goal_naive_gru_exps = ['contrabar_33__19:03_08:59:14/']
 walker_exps = ['contrabar_92__07:01_07:27:35/',
         'contrabar_93__07:01_13:35:33/',
         'contrabar_94__07:01_13:36:21/',

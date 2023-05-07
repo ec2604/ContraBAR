@@ -76,13 +76,11 @@ def get_args(rest_args):
     # --- REP LEARNER TRAINING ---
 
     # cpc
-    parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples for CPC')
-    parser.add_argument('--sampling_method', type=str, default='fast', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
+    parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples per positive for CPC batch')
+    parser.add_argument('--sampling_method', type=str, default='fast', help='fast/precise/negative_rewards')
     # general
     parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
-    parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
     parser.add_argument('--lr_representation_learner', type=float, default=1e-4)
-    parser.add_argument('--subsample_cpc', type=float, default=1.)
     parser.add_argument('--num_trajs_representation_learning_buffer', type=int, default=1000,
                         help='how many trajectories (!) to keep in VAE buffer')
     parser.add_argument('--underlying_state_dim', default=())
@@ -96,18 +94,14 @@ def get_args(rest_args):
     parser.add_argument('--representation_learner_buffer_add_thresh', type=float, default=1,
                         help='probability of adding a new trajectory to buffer')
     parser.add_argument('--representation_learner_batch_num_trajs', type=int, default=20,
-                        help='how many trajectories to use for VAE update')
+                        help='how many trajectories to use for CPC update')
     parser.add_argument('--tbptt_stepsize', type=int, default=None,
                         help='stepsize for truncated backpropagation through time; None uses max (horizon of BAMDP)')
 
 
     parser.add_argument('--num_representation_learner_updates', type=int, default=1,
-                        help='how many VAE update steps to take per meta-iteration')
+                        help='how many CPC update steps to take per meta-iteration')
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
-    parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,
-                        help='split batches up by task (to save memory or if tasks are of different length)')
-    parser.add_argument('--split_batches_by_elbo', type=boolean_argument, default=False,
-                        help='split batches up by elbo term (to save memory of if ELBOs are of different length)')
     parser.add_argument('--evaluate_representation', type=boolean_argument, default=False, help='train MLP to evaluate latent, without gradients flowing back')
     parser.add_argument('--evaluator_lr', type=float, default=1e-3, help='lr for MLP to evaluate representation')
     parser.add_argument('--evaluate_start_iter', type=int, default=6000, help='lookahead for CPC')
@@ -122,12 +116,8 @@ def get_args(rest_args):
     parser.add_argument('--lookahead_factor', type=int, default=10, help='lookahead for CPC')
 
 
-# --- ABLATIONS ---
 
-    # for the VAE
-
-
-    # combining vae and RL loss
+    # combining cpc and RL loss
     parser.add_argument('--rlloss_through_encoder', type=boolean_argument, default=False,
                         help='backprop rl loss through encoder')
     parser.add_argument('--add_nonlinearity_to_latent', type=boolean_argument, default=False,

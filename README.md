@@ -50,7 +50,6 @@ slightly modified - this modification is in a fork referenced in requirements_20
 The main training loop for ContraBAR can be found in `metalearner_cpc.py`,
 the models are in `models/`, the CPC set-up and losses are in `cpc.py` and the RL algorithms in `algorithms/`.
 
-There's quite a bit of documentation in the respective scripts so have a look there for details.
 
 ### Running an experiment
 
@@ -72,6 +71,7 @@ You can overwrite any default hyperparameters using command line arguments.
 
 Results will be written to tensorboard event files, 
 and some visualisations will be printed every now and then.
+
 
 ### Citation
 

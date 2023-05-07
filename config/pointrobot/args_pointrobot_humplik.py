@@ -74,8 +74,8 @@ def get_args(rest_args):
     # --- REP LEARNER TRAINING ---
 
     # cpc
-    parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples for CPC')
-    parser.add_argument('--sampling_method', type=str, default='fast', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
+    parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples per positive for CPC batch')
+    parser.add_argument('--sampling_method', type=str, default='fast', help='fast/precise/negative_rewards')
     # general
     parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
     parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
@@ -87,7 +87,7 @@ def get_args(rest_args):
     parser.add_argument('--representation_learner_buffer_add_thresh', type=float, default=1,
                         help='probability of adding a new trajectory to buffer')
     parser.add_argument('--representation_learner_batch_num_trajs', type=int, default=10,
-                        help='how many trajectories to use for VAE update')
+                        help='how many trajectories to use for CPC update')
     parser.add_argument('--tbptt_stepsize', type=int, default=50,
                         help='stepsize for truncated backpropagation through time; None uses max (horizon of BAMDP)')
     parser.add_argument('--vae_subsample_elbos', type=int, default=50,
@@ -99,7 +99,7 @@ def get_args(rest_args):
     parser.add_argument('--vae_avg_reconstruction_terms', type=boolean_argument, default=False,
                         help='Average reconstruction terms (instead of sum)')
     parser.add_argument('--num_representation_learner_updates', type=int, default=3,
-                        help='how many VAE update steps to take per meta-iteration')
+                        help='how many CPC update steps to take per meta-iteration')
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
     parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,
                         help='split batches up by task (to save memory or if tasks are of different length)')

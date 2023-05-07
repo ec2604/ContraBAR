@@ -75,12 +75,10 @@ def get_args(rest_args):
     # --- REP LEARNER TRAINING ---
 
     # cpc
-    parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples for CPC')
-    parser.add_argument('--sampling_method', type=str, default='fast', help='choose (fast, precise), where fast assumes dynamics are different for every trajectory and that z-s can be freely sampled from other trajectories')
+    parser.add_argument('--negative_factor', type=int, default=15, help='number of negative samples per positive for CPC batch')
+    parser.add_argument('--sampling_method', type=str, default='fast', help='fast/precise/negative_rewards')
     # general
     parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
-    parser.add_argument('--density_model', type=str, default='NN', help='choose: NN, bilinear')
-    parser.add_argument('--cpc_trajectory_weight_sampling', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
 
     parser.add_argument('--lr_representation_learner', type=float, default=1e-4)
@@ -91,25 +89,14 @@ def get_args(rest_args):
     parser.add_argument('--representation_learner_buffer_add_thresh', type=float, default=1,
                         help='probability of adding a new trajectory to buffer')
     parser.add_argument('--representation_learner_batch_num_trajs', type=int, default=16,
-                        help='how many trajectories to use for VAE update')
+                        help='how many trajectories to use for CPC update')
     parser.add_argument('--tbptt_stepsize', type=int, default=None,
                         help='stepsize for truncated backpropagation through time; None uses max (horizon of BAMDP)')
-    parser.add_argument('--vae_subsample_elbos', type=int, default=None,
-                        help='for how many timesteps to compute the ELBO; None uses all')
-    parser.add_argument('--vae_subsample_decodes', type=int, default=None,
-                        help='number of reconstruction terms to subsample; None uses all')
-    parser.add_argument('--vae_avg_elbo_terms', type=boolean_argument, default=False,
-                        help='Average ELBO terms (instead of sum)')
-    parser.add_argument('--vae_avg_reconstruction_terms', type=boolean_argument, default=False,
-                        help='Average reconstruction terms (instead of sum)')
+
     parser.add_argument('--num_representation_learner_updates', type=int, default=10,
-                        help='how many VAE update steps to take per meta-iteration')
+                        help='how many CPC update steps to take per meta-iteration')
     parser.add_argument('--underlying_state_dim', default=())
     parser.add_argument('--pretrain_len', type=int, default=0, help='for how many updates to pre-train the VAE')
-    parser.add_argument('--split_batches_by_task', type=boolean_argument, default=False,
-                        help='split batches up by task (to save memory or if tasks are of different length)')
-    parser.add_argument('--split_batches_by_elbo', type=boolean_argument, default=False,
-                        help='split batches up by elbo term (to save memory of if ELBOs are of different length)')
     parser.add_argument('--evaluate_representation', type=boolean_argument, default=False, help='train MLP to evaluate latent, without gradients flowing back')
     parser.add_argument('--evaluator_lr', type=float, default=1e-3, help='lr for MLP to evaluate representation')
 # - encoder
@@ -122,45 +109,12 @@ def get_args(rest_args):
     parser.add_argument('--latent_dim', type=int, default=50, help='dimensionality of latent space')
     parser.add_argument('--lookahead_factor', type=int, default=10, help='lookahead for CPC')
 
-    # - decoder: rewards
-    parser.add_argument('--decode_reward', type=boolean_argument, default=False, help='use reward decoder')
-    parser.add_argument('--rew_loss_coeff', type=float, default=1.0, help='weight for state loss (vs reward loss)')
-    parser.add_argument('--input_prev_state', type=boolean_argument, default=True, help='use prev state for rew pred')
-    parser.add_argument('--input_action', type=boolean_argument, default=True, help='use prev action for rew pred')
-    parser.add_argument('--reward_decoder_layers', nargs='+', type=int, default=[256, 64])
-    parser.add_argument('--multihead_for_reward', type=boolean_argument, default=False,
-                        help='one head per reward pred (i.e. per state)')
-    parser.add_argument('--rew_pred_type', type=str, default='deterministic',
-                        help='choose: '
-                             'bernoulli (predict p(r=1|s))'
-                             'categorical (predict p(r=1|s) but use softmax instead of sigmoid)'
-                             'deterministic (treat as regression problem)')
 
-    # - decoder: state transitions
-    parser.add_argument('--decode_state', type=boolean_argument, default=True, help='use state decoder')
-    parser.add_argument('--state_loss_coeff', type=float, default=1.0, help='weight for state loss')
-    parser.add_argument('--state_decoder_layers', nargs='+', type=int, default=[256, 128])
-    parser.add_argument('--state_pred_type', type=str, default='deterministic', help='choose: deterministic, gaussian')
-
-    # - decoder: ground-truth task ("varibad oracle", after Humplik et al. 2019)
-    parser.add_argument('--decode_task', type=boolean_argument, default=False, help='use task decoder')
-    parser.add_argument('--task_loss_coeff', type=float, default=1.0, help='weight for task loss')
-    parser.add_argument('--task_decoder_layers', nargs='+', type=int, default=[64, 32])
-    parser.add_argument('--task_pred_type', type=str, default='task_id', help='choose: task_id, task_description')
-
-    # --- ABLATIONS ---
-
-    # for the VAE
-
-
-    # combining vae and RL loss
+    # combining cpc and RL loss
     parser.add_argument('--rlloss_through_encoder', type=boolean_argument, default=False,
                         help='backprop rl loss through encoder')
     parser.add_argument('--add_nonlinearity_to_latent', type=boolean_argument, default=False,
                         help='Use relu before feeding latent to policy')
-
-
-    # for the policy training
 
 
     # for other things
