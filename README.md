@@ -72,6 +72,13 @@ You can overwrite any default hyperparameters using command line arguments.
 Results will be written to tensorboard event files, 
 and some visualisations will be printed every now and then.
 
+### Results
+
+The results can be found in ```end_performance_per_episode``` and the script to generate them
+is ```eval_test_perf```. 
+
+For evaluating and visualizing results the ```eval_script``` and
+```viz_script``` are available.
 
 ### Citation
 
