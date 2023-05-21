@@ -1,3 +1,5 @@
+# Script used to collect dataset for evaluating belief soundness
+
 import argparse
 from config.dm_control import args_reacher_contrabar, args_sparse_reacher_contrabar
 from config.pointrobot import args_pointrobot_contrabar

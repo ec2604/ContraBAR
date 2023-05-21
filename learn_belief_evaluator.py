@@ -1,3 +1,7 @@
+
+
+## Very untidy scripts for using an MLP classifier to prove belief.
+
 import torch
 import numpy as np
 from models.cpc_modules import statePredictor

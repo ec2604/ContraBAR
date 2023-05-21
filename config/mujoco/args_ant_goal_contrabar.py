@@ -79,7 +79,7 @@ def get_args(rest_args):
     parser.add_argument('--negative_factor', type=int, default=25, help='number of negative samples per positive for CPC batch')
     parser.add_argument('--sampling_method', type=str, default='negative_rewards', help='fast/precise/negative_rewards')
     # general
-    parser.add_argument('--with_action_gru', type=boolean_argument, default=True, help='include action_gru to contrast beliefs')
+    parser.add_argument('--with_action_gru', type=boolean_argument, default=False, help='include action_gru to contrast beliefs')
     parser.add_argument('--augment_z', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--augment_for_policy', type=bool, default=False, help='weight trajectory steps?')
     parser.add_argument('--lr_representation_learner', type=float, default=0.0003)
@@ -111,7 +111,7 @@ def get_args(rest_args):
     parser.add_argument('--encoder_layers_before_gru', nargs='+', type=int, default=[])
     parser.add_argument('--encoder_gru_hidden_size', type=int, default=128, help='dimensionality of RNN hidden state')
     parser.add_argument('--encoder_layers_after_gru', nargs='+', type=int, default=[])
-    parser.add_argument('--latent_dim', type=int, default=50, help='dimensionality of latent space')
+    parser.add_argument('--latent_dim', type=int, default=100, help='dimensionality of latent space')
     parser.add_argument('--lookahead_factor', type=int, default=10, help='lookahead for CPC')
 
 

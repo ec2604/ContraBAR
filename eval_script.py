@@ -132,11 +132,7 @@ def main(model_location=None):
     cpc_encoder = contrabarCPC(args, None, lambda: 100)
     encoder = torch.load(model_location + 'models/encoder.pt')
     policy = torch.load(model_location + 'models/policy.pt')
-    # cpc_mlp = torch.load(model_location + 'models/cpc_mlp.pt')
-    # action_gru = torch.load(model_location + 'models/action_gru.pt')
     cpc_encoder.encoder = encoder
-    # cpc_encoder.mlp = cpc_mlp
-    # cpc_encoder.action_gru = action_gru
     args.num_processes = 1
     returns_per_episode, eval_cpc_stats, _ = evaluation.evaluate(args, policy, ret_rms=a, tasks=None, iter_idx=100,
                                                     encoder=cpc_encoder, num_episodes=5,
@@ -145,170 +141,17 @@ def main(model_location=None):
     # print(eval_cpc_stats.cpc_loss)
     return returns_per_episode
 if __name__ == '__main__':
-    # main()
     returns = []
-    # for model_location in ['contrabar_81__21:11_15:32:14/']*10:
-    # for model_location in ['contrabar_16__17:01_16:41:07/']*10:
     for model_location in ant_goal_exps:
         print(model_location)
         returns_ = []
         for _ in range(10):
             returns_.append(main('/mnt/data/erac/logs_AntGoal-v0/' + model_location).detach().cpu().numpy())
         returns.append(np.mean(returns_,axis=0))
-    # print(returns)
     returns = np.concatenate(returns, axis=0)
     np.save('/mnt/data/erac/logs_AntGoal-v0/test_perf_contrabar.npy', returns)
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import pybullet
-# import time
-# import pybullet_data
-#
-# plt.ion()
-#
-# img = np.random.rand(200, 320)
-# #img = [tandard_normal((50,100))
-# image = plt.imshow(img, interpolation='none', animated=True, label="blah")
-# ax = plt.gca()
-#
-# #pybullet.connect(pybullet.GUI)
-# pybullet.connect(pybullet.DIRECT)
-#
-# pybullet.setAdditionalSearchPath(pybullet_data.getDataPath())
-# pybullet.loadURDF("plane.urdf", [0, 0, -1])
-# pybullet.loadURDF("r2d2.urdf")
-#
-# camTargetPos = [0, 0, 0]
-# cameraUp = [0, 0, 1]
-# cameraPos = [1, 1, 1]
-# pybullet.setGravity(0, 0, -10)
-#
-# pitch = -10.0
-#
-# roll = 0
-# upAxisIndex = 2
-# camDistance = 4
-# pixelWidth = 320
-# pixelHeight = 200
-# nearPlane = 0.01
-# farPlane = 100
-#
-# fov = 60
-#
-# main_start = time.time()
-# while (1):
-#   for yaw in range(0, 360, 10):
-#     pybullet.stepSimulation()
-#     start = time.time()
-#
-#     viewMatrix = pybullet.computeViewMatrixFromYawPitchRoll(camTargetPos, camDistance, yaw, pitch,
-#                                                             roll, upAxisIndex)
-#     aspect = pixelWidth / pixelHeight
-#     projectionMatrix = pybullet.computeProjectionMatrixFOV(fov, aspect, nearPlane, farPlane)
-#     img_arr = pybullet.getCameraImage(pixelWidth,
-#                                       pixelHeight,
-#                                       viewMatrix,
-#                                       projectionMatrix,
-#                                       shadow=1,
-#                                       lightDirection=[1, 1, 1],
-#                                       renderer=pybullet.ER_BULLET_HARDWARE_OPENGL)
-#     stop = time.time()
-#     print("renderImage %f" % (stop - start))
-#
-#     w = img_arr[0]  #width of the image, in pixels
-#     h = img_arr[1]  #height of the image, in pixels
-#     rgb = img_arr[2]  #color data RGB
-#     dep = img_arr[3]  #depth data
-#
-#     print('width = %d height = %d' % (w, h))
-#
-#     #note that sending the data to matplotlib is really slow
-#
-#     #reshape is needed
-#     np_img_arr = np.reshape(rgb, (h, w, 4))
-#     np_img_arr = np_img_arr * (1. / 255.)
-#
-#     #show
-#     #plt.imshow(np_img_arr,interpolation='none',extent=(0,1600,0,1200))
-#     #image = plt.imshow(np_img_arr,interpolation='none',animated=True,label="blah")
-#
-#     image.set_data(np_img_arr)
-#     ax.plot([0])
-#     #plt.draw()
-#     #plt.show()
-#     plt.pause(0.01)
-#     #image.draw()
-#
-# main_stop = time.time()
-#
-# print("Total time %f" % (main_stop - main_start))
-#
-# pybullet.resetSimulation()
-# import matplotlib as mpl
-# import matplotlib.pyplot as plt
-# import seaborn as sns
-# import numpy as np
-# from scipy import stats
-#
-# sns.color_palette("dark")
-#
-# def set_default_plot_params():
-#
-#     plt.rcParams['font.size'] = 40
-#     mpl.rcParams['ytick.labelsize'] = 15  # 21
-#     mpl.rcParams['xtick.labelsize'] = 15  # 21
-#     plt.rcParams["font.family"] = "Verdana"
-#     plt.rcParams["font.sans-serif"] = "Verdana"
-#     plt.rcParams['axes.labelsize'] = 17  # 21
-#     plt.rcParams['axes.titlesize'] = 17  # 25
-#     plt.rcParams['axes.linewidth'] = 0.6
-#     plt.rcParams['legend.fontsize'] = 14  # 22
-#     plt.rcParams["savefig.format"] = 'pdf'
-#     plt.rcParams['axes.edgecolor'] = 'grey'
-#     plt.rcParams['axes.edgecolor'] = 'grey'
-#     plt.rcParams['axes.linewidth'] = 1
-# a = np.load('test_perf_augment_contrabar_2.npy')
-# d = np.load('test_perf_non_augment_contrabar_2.npy')
-# b = np.load('test_perf_augment_contrabar_3.npy')
-# e = np.load('test_perf_non_augment_contrabar_3.npy')
-# c = np.load('test_perf_augment_contrabar_4.npy')
-# f = np.load('test_perf_non_augment_contrabar_4.npy')
-# augmented = np.vstack([a,b,c])
-# non_augmented = np.vstack([d,e,f])
-# set_default_plot_params()
-# fig = plt.figure(figsize=(8, 6))
-# from matplotlib import gridspec
-# gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1])
-# ax0 = plt.subplot(gs[0])
-# ax1 = plt.subplot(gs[1])
-# axes = [ax0, ax1]
-# arr = [augmented, non_augmented]
-# for j in range(2):
-#     y_mean = np.mean(arr[j], axis=0)
-#     y_std = np.std(arr[j], axis=0)
-#     y_se = stats.sem(arr[j], axis=0)
-#     y_cfi = stats.norm.interval(0.95, loc=y_mean, scale=y_se)
-#     x = np.arange(1,4)
-#     p = axes[0].plot(x, y_mean, marker='x', linewidth=2,
-#                               label='No augmentation' if j % 2 else 'Augmentation')
-#     axes[0].fill_between(x, y_cfi[0], y_cfi[1], facecolor=p[0].get_color(), alpha=0.2)
-# axes[0].set_ylim([0,40])
-# axes[0].set_xticks(range(1, 4))
-# axes[0].set_xlabel('Episode #')
-# axes[0].set_ylabel('Average return over domains')
-# axes[0].set_title('Results for different domains',pad=1.6)
-# axes[0].legend(loc='upper right')
-# axes[0].grid()
-# axes[0].set_yticks([0,5,10,15,20,25,30,35])
-# e = np.load("merged.npy")
-# axes[1].imshow(e, aspect='auto')
-# axes[1].set_xticks([])
-# axes[1].set_yticks([])
-# plt.tight_layout(w_pad=0.01)
 
-# plt.plot(np.arange(1,301)*1524, y_mean, linestyle='-', linewidth=2,label='offline ContraBAR')
-# plt.show()
-# plt.close()
+
 import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -332,30 +175,4 @@ def set_default_plot_params():
     plt.rcParams["savefig.format"] = 'pdf'
     plt.rcParams['axes.edgecolor'] = 'grey'
     plt.rcParams['axes.edgecolor'] = 'grey'
-# fig = plt.figure(figsize=(6 ,6))
-# xticks = np.hstack([np.linspace(0,4e5,9),4.6e5])
-# plt.plot(np.arange(1,301)*1524, y_mean, linestyle='-', linewidth=2,label='offline ContraBAR')
-# plt.xlabel('Steps')
-# plt.ylabel('Average returns')
-# plt.title('Offline Semi-Circle')
-# plt.legend()
-# plt.xticks(xticks)
-# plt.ticklabel_format(axis='x',style='scientific',scilimits=(0,0))
-# plt.grid()
-# plt.savefig('/Users/erachoshen/Documents/masters/varibad_cpc/figures/offline_contrabar.png')
-# plt.legend()
-# plt.savefig('/Users/erachoshen/Documents/masters/varibad_cpc/figures/offline_contrabar.png')
-# plt.fill_between(np.arange(1,301)*1524, y_cfi[0], y_cfi[1],alpha=0.2)
-# plt.savefig('/Users/erachoshen/Documents/masters/varibad_cpc/figures/offline_contrabar.png')
-
-# plt.rcParams["savefig.format"] = 'pdf'
-# fig, axes = plt.subplots(2,2,figsize=(6,4))
-# axes.flatten()[0].imshow(frames[1])
-# axes.flatten()[1].imshow(frames[17])
-# axes.flatten()[2].imshow(frames[19])
-# axes.flatten()[3].imshow(frames[63])
-# for ax in axes.flatten():
-#     ax.set_xticks([])
-#     ax.set_yticks([])
-# plt.tight_layout(w_pad=0.01, h_pad=0.01)
 

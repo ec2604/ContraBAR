@@ -25,7 +25,7 @@ import numpy as np
 from scipy import stats
 
 
-# methods = ['varibad', 'cpc', 'recurrent']
+methods = ['varibad', 'cpc', 'recurrent']
 # methods = ['cpc', 'rl2']
 
 # methods = ['cpc']
